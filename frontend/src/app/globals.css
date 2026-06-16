@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 1rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@media print {
+  /* Hide non-report layout structures and actions */
+  nav,
+  footer,
+  button,
+  .print\:hidden,
+  a[href="/"] {
+    display: none !important;
+  }
+
+  /* Force printing of recommendations and hidden elements */
+  .print-force-show {
+    display: block !important;
+  }
+
+  /* Print resets for typography and page colors */
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    font-size: 11pt !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Remove dynamic UI styles like page shadow or hover ring */
+  .border,
+  .shadow-sm,
+  .rounded-xl {
+    box-shadow: none !important;
+    border-color: #e5e7eb !important;
+  }
+
+  /* Ensure correct backgrounds/colors are preserved in printed PDF */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Control PDF page breaks gracefully */
+  .break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  h1, h2, h3 {
+    page-break-after: avoid;
+  }
+
+  /* Prevent split of content blocks across pages */
+  .border.rounded-xl {
+    break-inside: avoid;
+  }
+}
