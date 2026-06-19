@@ -1,121 +1,104 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const crawler = require('../services/crawler');
-const siteCrawler = require('../services/siteCrawler');
-const siteAudit = require('../services/siteAudit');
-const lighthouseService = require('../services/lighthouseService');
-const socialMetaHelper = require('../services/socialMetaHelper');
 const securityAnalyzer = require('../services/securityAnalyzer');
-const seoAnalyzer = require('../services/seoAnalyzer');
-const htmlFetcher = require('../services/htmlFetcher');
-const keywordAnalyzer = require('../services/keywordAnalyzer');
-const backlinkAnalyzer = require('../services/backlinkAnalyzer');
 const reportGenerator = require('../services/reportGenerator');
-const aiEngine = require('../services/aiEngine');
 
 // POST /api/scan
 router.post('/', async (req, res) => {
+  const startTime = Date.now();
+  const scanId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+  
   try {
-    let { url, scanType } = req.body;
-    if (!url || !scanType) {
-      return res.status(400).json({ error: 'url and scanType are required' });
-    }
-    const validTypes = ['seo', 'vapt', 'full', 'site'];
-    if (!validTypes.includes(scanType)) {
-      return res.status(400).json({ error: 'scanType must be seo, vapt, full, or site' });
+    let { url, consent, mode, socketId } = req.body;
+    if (!url) {
+      return res.status(400).json({ error: 'url is required' });
     }
 
-    // Normalize URL - add https:// if no scheme
-    let normalizedUrl = url.trim();
-    if (!/^https?:\/\//i.test(normalizedUrl)) {
-      normalizedUrl = 'https://' + normalizedUrl;
-    }
+    const hasConsent = !!consent;
+    const scanMode = mode || 'full'; // 'quick' or 'full'
 
-    let crawlerResult = null;
-    let siteAuditResult = null;
+    // Normalize URL
+    const normalizedUrl = crawler.normalizeUrl(url);
 
-    if (scanType === 'site') {
-      // Site audit: multi-page crawl + technical checks
-      const siteData = await siteCrawler.crawlSite(normalizedUrl);
-      if (siteData.pages.length === 0) {
-        return res.status(400).json({ error: 'Failed to crawl site. No pages could be fetched.' });
+    // Get io instance and client socket
+    const io = req.app.get('io');
+    const clientSocket = io && socketId ? io.to(socketId) : null;
+
+    const emitStep = (step, status, details = {}) => {
+      if (clientSocket) {
+        clientSocket.emit('scan_progress', {
+          scanId,
+          step,
+          status,
+          ...details
+        });
       }
-      siteAuditResult = await siteAudit.runSiteAudit({
-        pages: siteData.pages,
-        baseOrigin: siteData.baseOrigin,
-      });
-      // Use first page as homepage for single-page SEO
-      const homepage = siteData.pages[0];
-      crawlerResult = {
-        html: homepage.html,
-        url: homepage.url,
-        robotsTxt: siteData.robotsTxt,
-        sitemapXml: siteData.sitemapXml,
-      };
-    } else {
-      crawlerResult = await crawler.crawl(normalizedUrl);
-    }
+    };
 
+    // 1. Crawling Step
+    emitStep('crawling', 'in_progress');
+    console.log(`[scan] [${scanId}] Starting crawl for: ${normalizedUrl} (consent: ${hasConsent}, mode: ${scanMode})`);
+    const crawlerResult = await crawler.crawl(normalizedUrl);
+    
     if (!crawlerResult) {
+      emitStep('crawling', 'failed', { error: 'Failed to crawl website' });
       return res.status(400).json({ error: 'Failed to crawl URL. Check that it is valid and accessible.' });
     }
+    emitStep('crawling', 'completed');
 
-    // Start backlinks fetch in parallel (don't block on Lighthouse)
-    const domain = (() => {
-      try { return new URL(crawlerResult.url).hostname; } catch { return crawlerResult.url; }
-    })();
-    const backlinksPromise = backlinkAnalyzer.analyzeBacklinks(domain);
+    // 2. Define step progress callback for security analyzer
+    const onStep = (stepName, status) => {
+      emitStep(stepName, status);
+    };
 
-    let lighthouseResult = null;
-    let socialResult = null;
-    let securityResult = null;
-    let seoResult = null;
-    let rankingsData = null;
+    // Run security analyzer passing consent, mode and callback
+    console.log(`[scan] [${scanId}] Running security and VAPT checks (consent: ${hasConsent})`);
+    
+    // We pass (hasConsent && scanMode !== 'quick') to security analyzer.
+    // If it's a quick scan, it skips OpenAI and uses fallback static check.
+    const runAi = hasConsent && scanMode === 'full';
+    
+    const securityResult = await securityAnalyzer.analyzeSecurity(crawlerResult, runAi, onStep);
 
-    let usedRenderedHtml = true;
-    if (scanType === 'seo' || scanType === 'full' || scanType === 'site') {
-      // Use Puppeteer-rendered HTML for accurate meta/title extraction (JS-rendered sites)
-      const renderedHtml = await htmlFetcher.fetchRenderedHtml(crawlerResult.url);
-      usedRenderedHtml = !!renderedHtml;
-      if (!renderedHtml) {
-        console.warn('[scan] Using raw HTML; Puppeteer fetch failed');
-      }
-      const htmlForSeo = renderedHtml || crawlerResult.html;
-      const crawlerForSeo = { ...crawlerResult, html: htmlForSeo };
+    const scanDuration = parseFloat(((Date.now() - startTime) / 1000).toFixed(2));
 
-      lighthouseResult = await lighthouseService.runLighthouse(crawlerResult.url);
-      console.log('Lighthouse result:', lighthouseResult);
-      socialResult = socialMetaHelper.analyzeSocialMeta(htmlForSeo);
-      console.log('Social result:', socialResult);
-      seoResult = seoAnalyzer.runSEOAnalyzer(crawlerForSeo);
-      rankingsData = await keywordAnalyzer.analyzeKeywordsAsync(crawlerForSeo, seoResult?.details);
-    }
-
-    if (scanType === 'vapt' || scanType === 'full') {
-      securityResult = await securityAnalyzer.analyzeSecurity(crawlerResult);
-    }
-
-    const backlinks = await backlinksPromise;
-
+    // Generate the report
     const report = reportGenerator.generateReport({
-      lighthouseResult,
-      socialResult,
       securityResult,
-      siteAuditResult,
-      seoResult,
-      rankingsData,
-      backlinks,
       url: crawlerResult.url,
-      usedRenderedHtml,
+      scanDuration
     });
 
-    // Optional: AI recommendations (if OPENAI_API_KEY is set)
-    const recommendations = await aiEngine.generateRecommendations(report);
-    if (recommendations) {
-      report.recommendations = recommendations;
-    }
+    // Send completed event to WebSocket if exists
+    emitStep('complete', 'completed', { score: report.score, grade: report.grade });
 
-    res.json(report);
+    res.json({
+      scanId,
+      score: report.score,
+      grade: report.grade,
+      findings: report.findings,
+      summary: report.summary,
+      positives: report.positives,
+      sslDetails: report.sslDetails,
+      dnsDetails: report.dnsDetails,
+      exposedFiles: report.exposedFiles,
+      scannedUrl: report.url,
+      scanDate: report.generatedAt,
+      scanDuration: report.scanDuration,
+      techStack: report.techStack,
+      cookieAudit: report.cookieAudit,
+      corsIssues: report.corsIssues,
+      mixedContent: report.mixedContent,
+      riskBreakdown: report.riskBreakdown,
+      topPriority: report.topPriority,
+      complianceFlags: report.complianceFlags,
+      portScanData: report.portScanData,
+      whoisData: report.whoisData,
+      redirectData: report.redirectData,
+      robotsData: report.robotsData
+    });
   } catch (err) {
     console.error('Scan error:', err);
     res.status(500).json({ error: err.message || 'Scan failed' });

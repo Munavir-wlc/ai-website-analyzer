@@ -1,27 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
-import SeoDetailCards from './SeoDetailCards';
-import {
-  RadarChart,
-  Radar,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  ResponsiveContainer,
-} from 'recharts';
-
-const CATEGORY_CONFIG = [
-  { key: 'seoScore', label: 'On-Page SEO', color: '#ef4444' },
-  { key: 'securityScore', label: 'Security', color: '#f59e0b' },
-  { key: 'linksScore', label: 'Links', color: '#22c55e' },
-  { key: 'usabilityScore', label: 'Usability', color: '#3b82f6' },
-  { key: 'performanceScore', label: 'Performance', color: '#8b5cf6' },
-  { key: 'socialScore', label: 'Social', color: '#ec4899' },
-];
+import { 
+  Shield, CheckCircle, AlertTriangle, FileText, Download, Clock, 
+  Settings, Globe, Lock, ShieldAlert, Cpu, Database, Eye, Info
+} from 'lucide-react';
 
 function GradeGauge({ grade, score, size = 'md', color }) {
   const s = score ?? 0;
@@ -32,13 +18,14 @@ function GradeGauge({ grade, score, size = 'md', color }) {
   return (
     <div className="relative" style={{ width: dim * 4, height: dim * 4 }}>
       <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-        <circle cx="50" cy="50" r="45" fill="none" stroke="#e2e8f0" strokeWidth="8" />
+        {/* Dark theme background circle */}
+        <circle cx="50" cy="50" r="45" fill="none" stroke="#1e293b" strokeWidth="8" />
         <circle
           cx="50"
           cy="50"
           r="45"
           fill="none"
-          stroke={color || "#3b82f6"}
+          stroke={color || "#6366f1"}
           strokeWidth="8"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
@@ -47,7 +34,7 @@ function GradeGauge({ grade, score, size = 'md', color }) {
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={`font-bold ${size === 'large' ? 'text-4xl' : 'text-2xl'}`}>
+        <span className={`font-extrabold ${size === 'large' ? 'text-5xl' : 'text-2xl'} text-white`}>
           {grade ?? '—'}
         </span>
       </div>
@@ -55,480 +42,828 @@ function GradeGauge({ grade, score, size = 'md', color }) {
   );
 }
 
-/**
- * Modal Component - Shows full screenshot
- */
-function ScreenshotModal({ isOpen, onClose, src, type, url }) {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">{type === 'mobile' ? 'Mobile' : 'Desktop'} Preview</h2>
-            <p className="text-sm text-gray-500 mt-1">{url}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Image Container */}
-        <div className="flex-1 flex items-center justify-center bg-gray-50 overflow-auto">
-          {src ? (
-            <img
-              src={src}
-              alt={`${type} preview`}
-              className="max-w-full max-h-full object-contain"
-            />
-          ) : (
-            <p className="text-gray-500">Loading...</p>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-200 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-lg font-medium transition"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DevicePreview({ type, url, src, loading, error, onPreviewClick }) {
-  const [imgError, setImgError] = useState(false);
-  const isMobile = type === 'mobile';
-  const showImage = src && !imgError && !error;
-
-  useEffect(() => {
-    setImgError(false);
-  }, [src]);
-
-  return (
-    <div
-      className={`flex flex-col overflow-hidden rounded-xl bg-white cursor-pointer ${isMobile ? 'w-full h-[320px]' : 'w-full'
-        }`}
-      onClick={() => showImage && onPreviewClick()}
-    >
-      <div className="flex items-center justify-center bg-white overflow-hidden w-full h-full">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center gap-3 p-4 w-full h-full bg-gray-50">
-            <div className="w-8 h-8 border-4 border-gray-200 border-t-blue-500 rounded-full animate-spin"></div>
-            <p className="text-xs text-gray-600">Capturing preview...</p>
-          </div>
-        ) : error ? (
-          <div className="flex flex-col items-center justify-center p-4 text-center w-full h-full bg-gray-50">
-            <p className="text-xs text-red-500">Failed to load preview</p>
-          </div>
-        ) : showImage ? (
-          <img
-            src={src}
-            alt={`${type} preview`}
-            className="w-full h-full object-contain bg-white"
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <div className="flex items-center justify-center w-full h-full bg-gray-50">
-            <p className="text-xs text-gray-500">Preview unavailable</p>
-          </div>
-        )}
-      </div>
-
-      {isMobile && (
-        <div className="h-5 bg-gray-200 flex items-center justify-center">
-          <div className="w-10 h-1 bg-gray-400 rounded-full"></div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function AuditReport({ result }) {
-  const [expanded, setExpanded] = useState(false);
-  const [desktopScreenshot, setDesktopScreenshot] = useState(null);
-  const [mobileScreenshot, setMobileScreenshot] = useState(null);
-  const [screenshotLoading, setScreenshotLoading] = useState(true);
-  const [screenshotError, setScreenshotError] = useState(null);
-  const [retryCount, setRetryCount] = useState(0);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalType, setModalType] = useState('desktop');
-
-  const MAX_RETRIES = 2;
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchScreenshots() {
-      setScreenshotLoading(true);
-      setScreenshotError(null);
-
-      try {
-        const apiUrl = '/api/screenshot';
-        const params = new URLSearchParams({ url: result.url });
-        const response = await fetch(`${apiUrl}?${params.toString()}`);
-
-        if (cancelled) return;
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to capture screenshots');
-        }
-
-        const processImage = (img) => {
-          if (!img) return null;
-          if (img.startsWith('data:')) return img;
-          return `data:image/jpeg;base64,${img}`;
-        };
-
-        setDesktopScreenshot(processImage(data.desktop));
-        setMobileScreenshot(processImage(data.mobile));
-        setScreenshotError(null);
-        setRetryCount(0);
-      } catch (error) {
-        console.error('Screenshot fetch error:', error);
-
-        if (!cancelled) {
-          const errorMsg = error.message || 'Unknown error';
-          setScreenshotError(errorMsg);
-          setDesktopScreenshot(null);
-          setMobileScreenshot(null);
-
-          if (retryCount < MAX_RETRIES) {
-            console.log(`Retrying screenshot... (${retryCount + 1}/${MAX_RETRIES})`);
-            setTimeout(() => {
-              setRetryCount(retryCount + 1);
-            }, 3000);
-            return;
-          }
-        }
-      } finally {
-        if (!cancelled) setScreenshotLoading(false);
-      }
-    }
-
-    fetchScreenshots();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [result.url, retryCount]);
+  const [activeSeverityFilter, setActiveSeverityFilter] = useState('all');
 
   const domain = (() => {
     try {
-      return new URL(result.url).hostname;
+      return new URL(result.scannedUrl || result.url).hostname;
     } catch {
-      return result.url;
+      return result.scannedUrl || result.url;
     }
   })();
 
-  const allIssues = [
-    ...(result.issues?.seo || []),
-    ...(result.issues?.siteAudit || []),
-    ...(result.issues?.security || []),
-    ...(result.issues?.performance || []),
-  ];
+  const issues = result.findings || [];
+  const totalIssues = issues.length;
 
-  const totalIssues = allIssues.length;
+  const score = result.score ?? 0;
+  const scoreColor = 
+    score >= 90 ? '#10b981' // Green
+    : score >= 70 ? '#a3e635' // Light Green (lime-400)
+    : score >= 50 ? '#f59e0b' // Yellow
+    : score >= 30 ? '#f97316' // Orange
+    : '#ef4444'; // Red
 
   const statusText =
-    (result.overallGrade === 'A+' || result.overallGrade === 'A' || result.overallGrade === 'A-')
-      ? 'Your page looks great'
-      : 'Your page could be better';
+    score >= 90
+      ? 'Website security configuration looks highly secure.'
+      : score >= 70
+        ? 'Minor configuration issues detected. Recommendations recommended.'
+        : score >= 50
+          ? 'Moderate threat exposure. Critical security updates suggested.'
+          : 'High risk exposure! Immediate security remediation is required.';
 
-  const activeCategories = CATEGORY_CONFIG.filter(({ key }) => result[key] != null);
-
-  const radarData = activeCategories.map(({ key, label }) => ({
-    subject: label,
-    value: result[key] ?? 0,
-    fullMark: 100,
-  }));
-
-  const formattedDate = result.generatedAt
-    ? new Date(result.generatedAt).toLocaleString(undefined, {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZoneName: 'short',
-    })
+  const formattedDate = result.scanDate || result.generatedAt
+    ? new Date(result.scanDate || result.generatedAt).toLocaleString()
     : '—';
 
-  const ISSUE_CATEGORIES = [
-    { key: 'seo', label: 'On-Page SEO & Accessibility', color: '#ef4444' },
-    { key: 'siteAudit', label: 'Site Audit', color: '#22c55e' },
-    { key: 'security', label: 'Security', color: '#f59e0b' },
-    { key: 'performance', label: 'Performance', color: '#3b82f6' },
+  const ssl = result.sslDetails || {};
+  const dns = result.dnsDetails || {};
+  const exposedFiles = result.exposedFiles || [];
+  const positives = result.positives || [];
+  const techStack = result.techStack || { cms: [], framework: [], server: [], analytics: [], libraries: [] };
+  const cookieAudit = result.cookieAudit || [];
+  const corsIssues = result.corsIssues || [];
+  const mixedContent = result.mixedContent || [];
+  const compliance = result.complianceFlags || { gdpr: false, pci: false, hipaa: false };
+  const breakdown = result.riskBreakdown || { critical: 0, high: 0, medium: 0, low: 0 };
+
+  const portScan = result.portScanData || { scanned: false, openPorts: [], totalScanned: 0 };
+  const whois = result.whoisData || { exists: false, registrar: 'Unknown', createdDate: null, expiryDate: null, daysRemaining: null };
+  const redirects = result.redirectData || { chain: [], redirectCount: 0, enforcesHttps: false, finalUrl: '', isCrossDomain: false };
+  const robots = result.robotsData || { exists: false, paths: [], sensitiveFound: [], raw: '' };
+
+  const sslDaysColor = ssl.daysRemaining > 60 
+    ? 'text-emerald-400' 
+    : ssl.daysRemaining > 14 
+      ? 'text-amber-400' 
+      : 'text-rose-400';
+
+  // Filter issues based on active severity tab
+  const filteredIssues = activeSeverityFilter === 'all'
+    ? issues
+    : issues.filter(issue => issue.severity?.toLowerCase() === activeSeverityFilter);
+
+  const filterTabs = [
+    { id: 'all', label: 'All Findings', count: totalIssues },
+    { id: 'critical', label: 'Critical', count: breakdown.critical || issues.filter(i => i.severity === 'critical').length },
+    { id: 'high', label: 'High', count: breakdown.high || issues.filter(i => i.severity === 'high').length },
+    { id: 'medium', label: 'Medium', count: breakdown.medium || issues.filter(i => i.severity === 'medium').length },
+    { id: 'low', label: 'Low', count: breakdown.low || issues.filter(i => i.severity === 'low').length }
   ];
 
-  const handleRetry = () => {
-    setRetryCount(retryCount + 1);
-  };
-
-  const openModal = (type) => {
-    setModalType(type);
-    setModalOpen(true);
-  };
-
-  const currentScreenshot = modalType === 'desktop' ? desktopScreenshot : mobileScreenshot;
-
   return (
-    <>
-      <div className="space-y-8">
+    <div className="space-y-8 text-slate-100 font-sans">
+      {/* Print custom stylesheet to invert colors nicely on print */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @media print {
+          body {
+            background: white !important;
+            color: #0f172a !important;
+          }
+          .print\\:hidden {
+            display: none !important;
+          }
+          .bg-slate-900, .bg-slate-950, .bg-slate-950\\/80, .bg-slate-900\\/60, .bg-slate-950\\/30 {
+            background: #ffffff !important;
+            color: #0f172a !important;
+            border-color: #cbd5e1 !important;
+          }
+          .text-white, .text-slate-100, .text-slate-200, .text-slate-350, .text-slate-400 {
+            color: #1e293b !important;
+          }
+          .border-slate-800, .border-slate-700 {
+            border-color: #cbd5e1 !important;
+          }
+          .shadow-2xl, .shadow-xl, .shadow-lg, .shadow-sm {
+            box-shadow: none !important;
+          }
+          circle[stroke="#1e293b"] {
+            stroke: #e2e8f0 !important;
+          }
+        }
+      `}} />
+
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Audit Results for {domain}</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-2.5">
+            <Shield className="h-8 w-8 text-indigo-500" /> VAPT Vulnerability Report
+          </h1>
+          <p className="text-slate-400 mt-1">
+            Target Domain: <strong className="text-white font-semibold">{domain}</strong> 
+            <span className="mx-2 print:hidden">•</span>
+            <a href={result.scannedUrl || result.url} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline print:hidden">
+              {result.scannedUrl || result.url}
+            </a>
+          </p>
         </div>
+        <Button 
+          variant="outline" 
+          onClick={() => window.print()} 
+          className="print:hidden bg-slate-900 hover:bg-slate-800 text-white border-slate-800 hover:border-slate-700 flex items-center gap-2 py-2 px-4 rounded-xl"
+        >
+          <Download className="h-4 w-4" /> Print / Save PDF Report
+        </Button>
+      </div>
 
-        {/* First Section: Grade, Screenshots, Category Scores, Radar, Recommendations */}
-        <div className="border rounded-xl border-gray-200 bg-white p-6 sm:p-8 shadow-sm space-y-8">
-        {/* Grade + Screenshots grid - always side by side */}
-        <div className="grid lg:grid-cols-2 gap-8">
-          <div className="space-y-4 mt-14">
-            <div className="flex flex-col items-center gap-4 text-center">
-              <GradeGauge
-                grade={result.overallGrade}
-                score={result.overallScore}
-                size="large"
-              />
-
-              <p className="text-lg text-slate-600">
-                {statusText}
-              </p>
-              {result.seoDetails && (
-                <p className="text-sm text-slate-500 max-w-md">
-                  Page is analyzed for On-Page SEO. Use the checklist below to improve HTML tags and keyword alignment.
-                </p>
-              )}
+      {/* Audit Overview & Summary */}
+      <div className="border border-slate-800 rounded-3xl bg-slate-900/60 p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+        <div className="absolute -inset-px bg-gradient-to-br from-indigo-500/10 to-purple-500/0 rounded-3xl -z-10" />
+        <div className="flex flex-col md:flex-row items-center gap-8 justify-around">
+          <div className="flex flex-col items-center text-center space-y-4">
+            <GradeGauge
+              grade={result.grade}
+              score={score}
+              size="large"
+              color={scoreColor}
+            />
+            <div>
+              <div className="text-3xl font-extrabold text-white">{score}/100</div>
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-1">Security Score</p>
             </div>
           </div>
-          <div className="relative w-full max-w-xl mb-10">
-            {/* Desktop Screenshot */}
-            <div className="rounded-2xl overflow-hidden shadow-2xl border border-gray-200 bg-white">
-              <DevicePreview
-                type="desktop"
-                url={result.url}
-                src={desktopScreenshot}
-                loading={screenshotLoading}
-                error={screenshotError}
-                onPreviewClick={() => openModal('desktop')}
-              />
-            </div>
 
-            {/* Floating Mobile Screenshot */}
-            <div className="absolute -right-10 bottom-[-100px] w-36 shadow-2xl rounded-xl border border-gray-200 bg-white overflow-hidden">
-              <DevicePreview
-                type="mobile"
-                url={result.url}
-                src={mobileScreenshot}
-                loading={screenshotLoading}
-                error={screenshotError}
-                onPreviewClick={() => openModal('mobile')}
-              />
+          <div className="flex-1 space-y-4 max-w-xl text-center md:text-left">
+            <h2 className="text-2xl font-bold tracking-tight" style={{ color: scoreColor }}>{statusText}</h2>
+            <p className="text-slate-300 leading-relaxed text-sm">
+              {result.summary || `The scanning engine successfully audited response headers, cookie settings, CORS parameters, and sensitive paths. A total of ${totalIssues} vulnerability findings were compiled.`}
+            </p>
+            
+            {/* Meta stats grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-semibold uppercase tracking-wide text-slate-400 pt-2">
+              <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
+                <span className="block text-[10px] text-slate-500 mb-0.5">Scanned Date</span>
+                <span className="text-white text-[11px] normal-case">{new Date(result.scanDate || result.generatedAt).toLocaleDateString()}</span>
+              </div>
+              <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
+                <span className="block text-[10px] text-slate-500 mb-0.5">Scan Duration</span>
+                <span className="text-white text-[11px] normal-case">{result.scanDuration || '0.1'}s</span>
+              </div>
+              <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
+                <span className="block text-[10px] text-slate-500 mb-0.5">Compliance</span>
+                <span className={`${compliance.gdpr || compliance.pci || compliance.hipaa ? 'text-amber-400' : 'text-emerald-400'}`}>
+                  {compliance.gdpr || compliance.pci || compliance.hipaa ? 'Risks Found' : 'Pass'}
+                </span>
+              </div>
+              <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
+                <span className="block text-[10px] text-slate-500 mb-0.5">Total Findings</span>
+                <span className="text-white text-[11px]">{totalIssues}</span>
+              </div>
             </div>
           </div>
         </div>
+      </div>
 
-        {screenshotError && retryCount < MAX_RETRIES && (
-          <div className="flex justify-center">
-            <Button variant="outline" onClick={handleRetry} size="sm">
-              Retry Screenshot ({retryCount + 1}/{MAX_RETRIES})
-            </Button>
-          </div>
-        )}
-
-        <div className={`flex flex-col ${activeCategories.length >= 3 ? 'lg:flex-row justify-between' : 'items-center justify-center'} gap-10`}>
-
-          {/* Category Scores */}
-          <div className="flex flex-wrap gap-12 items-center justify-center">
-
-            {activeCategories.map(({ key, label, color }) => (
-              <div key={key} className="flex flex-col items-center">
-
-                <GradeGauge
-                  grade={result[key] != null ? scoreToGrade(result[key]) : '—'}
-                  score={result[key]}
-                  color={color}
-                />
-
-                <p className="mt-4 text-blue-600 font-medium text-sm text-center">
-                  {label}
-                </p>
-
+      {/* Top Priority Highlights Shelf */}
+      {result.topPriority && result.topPriority.length > 0 && (
+        <div className="border border-slate-800 rounded-3xl bg-slate-900/60 p-6 shadow-2xl relative overflow-hidden">
+          <div className="absolute -inset-px bg-gradient-to-r from-rose-500/10 via-amber-500/5 to-transparent rounded-3xl -z-10" />
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span className="flex h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse" />
+            Top Priority Recommendations
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {result.topPriority.map((issue, idx) => (
+              <div key={idx} className="p-4 bg-slate-950/60 border border-slate-800 rounded-2xl flex flex-col justify-between space-y-4">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 font-mono">
+                      {issue.category || 'General'}
+                    </span>
+                    <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded ${
+                      issue.severity === 'critical' || issue.severity === 'high' 
+                        ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                        : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                    }`}>
+                      {issue.severity}
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-white mt-2 line-clamp-1">{issue.title}</h4>
+                  <p className="text-xs text-slate-400 mt-1 line-clamp-3 leading-relaxed">{issue.description}</p>
+                </div>
+                {issue.remediation && (
+                  <div className="text-[11px] text-indigo-400 bg-indigo-500/5 border border-indigo-500/10 p-2.5 rounded-xl">
+                    <strong className="block text-[9px] uppercase tracking-wider text-indigo-300 font-semibold mb-0.5">Quick Fix:</strong>
+                    {issue.remediation}
+                  </div>
+                )}
               </div>
             ))}
-
           </div>
+        </div>
+      )}
 
-          {/* Radar Chart */}
-          {activeCategories.length >= 3 && (
-            <div className="w-[260px] h-[260px] mt-10">
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="70%">
-                  <PolarGrid stroke="#cbd5f5" strokeDasharray="4 4" />
-                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12 }} />
-                  <PolarRadiusAxis domain={[0, 100]} tick={false} />
-                  <Radar
-                    dataKey="value"
-                    stroke="#3b82f6"
-                    fill="#3b82f6"
-                    fillOpacity={0.35}
-                    strokeWidth={2}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
+      {/* Compliance Risk Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* GDPR */}
+        <div className="border border-slate-800 rounded-2xl bg-slate-900/60 p-5 shadow-md flex flex-col justify-between">
+          <div>
+            <h4 className="font-extrabold text-white text-base">GDPR Compliance</h4>
+            <p className="text-xs text-slate-400 mt-1">Requires HTTPS connections, SSL cert trust, secure cookie structures, and strict data leakage prevention.</p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+            <span className="text-xs text-slate-500 font-bold">Audit Status</span>
+            <span className={`text-xs font-bold uppercase px-3 py-1 rounded-full ${
+              compliance.gdpr 
+                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' 
+                : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+            }`}>
+              {compliance.gdpr ? 'Risk Identified' : 'Compliant'}
+            </span>
+          </div>
         </div>
 
-        <p className="text-sm text-slate-500">Report Generated: {formattedDate}</p>
+        {/* PCI-DSS */}
+        <div className="border border-slate-800 rounded-2xl bg-slate-900/60 p-5 shadow-md flex flex-col justify-between">
+          <div>
+            <h4 className="font-extrabold text-white text-base">PCI-DSS Compliance</h4>
+            <p className="text-xs text-slate-400 mt-1">Demands high trust rating, zero high/critical vulnerabilities, secure transport layers, and secure CORS scopes.</p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+            <span className="text-xs text-slate-500 font-bold">Audit Status</span>
+            <span className={`text-xs font-bold uppercase px-3 py-1 rounded-full ${
+              compliance.pci 
+                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' 
+                : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+            }`}>
+              {compliance.pci ? 'Risk Identified' : 'Compliant'}
+            </span>
+          </div>
+        </div>
 
-        {totalIssues > 0 && (
-          <div className="mt-10">
-            <Button variant="outline" onClick={() => setExpanded(!expanded)}>
-              {expanded ? 'Hide' : 'Show'} Recommendations ({totalIssues})
-            </Button>
-            <div className={`mt-6 space-y-6 print-force-show ${expanded ? 'block' : 'hidden'}`}>
-              {ISSUE_CATEGORIES.map(({ key, label, color }) => {
-                const issues = result.issues?.[key] || [];
-                if (issues.length === 0) return null;
+        {/* HIPAA */}
+        <div className="border border-slate-800 rounded-2xl bg-slate-900/60 p-5 shadow-md flex flex-col justify-between">
+          <div>
+            <h4 className="font-extrabold text-white text-base">HIPAA Compliance</h4>
+            <p className="text-xs text-slate-400 mt-1">Requires strict transmission encryption rules, active HSTS response headers, and clean access flags.</p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+            <span className="text-xs text-slate-500 font-bold">Audit Status</span>
+            <span className={`text-xs font-bold uppercase px-3 py-1 rounded-full ${
+              compliance.hipaa 
+                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' 
+                : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+            }`}>
+              {compliance.hipaa ? 'Risk Identified' : 'Compliant'}
+            </span>
+          </div>
+        </div>
+      </div>
 
-                return (
-                  <div key={key} className="border rounded-xl overflow-hidden bg-white break-inside-avoid">
-                    <div
-                      className="px-5 py-3 font-semibold text-white"
-                      style={{ backgroundColor: color }}
-                    >
-                      {label} ({issues.length})
+      {/* Technology Stack Detection */}
+      {techStack && Object.values(techStack).some(arr => arr && arr.length > 0) && (
+        <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+          <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+            <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+              <Cpu className="h-5 w-5 text-indigo-400" /> Technology Stack Detection
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+            {techStack.cms && techStack.cms.length > 0 && (
+              <div className="bg-slate-950/60 p-4 border border-slate-800 rounded-xl">
+                <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">CMS</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {techStack.cms.map((t, idx) => <Badge key={idx} className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-xs px-2 py-0.5">{t}</Badge>)}
+                </div>
+              </div>
+            )}
+            {techStack.framework && techStack.framework.length > 0 && (
+              <div className="bg-slate-950/60 p-4 border border-slate-800 rounded-xl">
+                <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Frameworks</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {techStack.framework.map((t, idx) => <Badge key={idx} className="bg-violet-500/10 text-violet-400 border border-violet-500/20 text-xs px-2 py-0.5">{t}</Badge>)}
+                </div>
+              </div>
+            )}
+            {techStack.server && techStack.server.length > 0 && (
+              <div className="bg-slate-950/60 p-4 border border-slate-800 rounded-xl">
+                <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Web Servers</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {techStack.server.map((t, idx) => <Badge key={idx} className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs px-2 py-0.5">{t}</Badge>)}
+                </div>
+              </div>
+            )}
+            {techStack.libraries && techStack.libraries.length > 0 && (
+              <div className="bg-slate-950/60 p-4 border border-slate-800 rounded-xl">
+                <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">JS / CSS Libs</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {techStack.libraries.map((t, idx) => <Badge key={idx} className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs px-2 py-0.5">{t}</Badge>)}
+                </div>
+              </div>
+            )}
+            {techStack.analytics && techStack.analytics.length > 0 && (
+              <div className="bg-slate-950/60 p-4 border border-slate-800 rounded-xl">
+                <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Analytics</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {techStack.analytics.map((t, idx) => <Badge key={idx} className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs px-2 py-0.5">{t}</Badge>)}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Vulnerabilities Details with Filter Tabs */}
+      <div className="border border-slate-800 rounded-3xl bg-slate-900/60 p-6 sm:p-8 shadow-2xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4 mb-6">
+          <h3 className="text-xl font-bold text-white">
+            Vulnerability Audits ({filteredIssues.length})
+          </h3>
+          
+          {/* Severity Filters */}
+          <div className="flex flex-wrap gap-1 p-1 bg-slate-950 border border-slate-800 rounded-xl print:hidden">
+            {filterTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveSeverityFilter(tab.id)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                  activeSeverityFilter === tab.id
+                    ? 'bg-slate-800 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className="h-4 min-w-4 px-1 flex items-center justify-center text-[10px] font-bold rounded-full bg-slate-900 border border-slate-800 text-slate-300">
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {filteredIssues.length === 0 ? (
+          <div className="py-12 text-center text-slate-500">
+            <CheckCircle className="h-10 w-10 text-emerald-400 mx-auto mb-3" />
+            <p className="text-lg font-bold text-emerald-400">All checks pass!</p>
+            <p className="text-sm text-slate-400 mt-1">No matches found for the active filter. Your configuration passes audit checks.</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {filteredIssues.map((issue, i) => (
+              <div
+                key={i}
+                className="border border-slate-800 rounded-2xl p-5 hover:bg-slate-950/20 transition flex flex-col md:flex-row gap-4 justify-between"
+              >
+                <div className="space-y-2 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-white text-base sm:text-lg">
+                      {issue.title}
+                    </span>
+                    {issue.category && (
+                      <Badge className="text-[10px] uppercase bg-slate-800 text-slate-400 font-mono tracking-wider border border-slate-800">
+                        {issue.category}
+                      </Badge>
+                    )}
+                    {issue.owasp && (
+                      <Badge className="text-[10px] uppercase text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 font-mono tracking-wider">
+                        {issue.owasp}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-slate-300 leading-relaxed mt-1">
+                    {issue.description}
+                  </p>
+                  {issue.remediation && (
+                    <div className="bg-slate-950/80 rounded-xl p-4 border-l-4 border-indigo-500 text-sm text-slate-300 mt-2 font-medium">
+                      <strong className="text-indigo-400 font-semibold block mb-1 text-xs uppercase tracking-wider">Remediation Guide:</strong>
+                      {issue.remediation}
                     </div>
-                    <div className="divide-y">
-                      {issues.map((issue, i) => (
-                        <div
-                          key={i}
-                          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-5 py-4 hover:bg-gray-50 transition"
-                        >
-                          <div className="flex-1">
-                            <p className="text-gray-800 font-medium">{issue.message}</p>
-                            {issue.fix && (
-                              <p className="text-sm text-slate-500 mt-1">{issue.fix}</p>
-                            )}
-                          </div>
-                          <span
-                            className={`inline-flex shrink-0 w-fit px-3 py-1 text-xs rounded-md font-medium ${
-                              issue.severity === 'high'
-                                ? 'bg-red-100 text-red-700'
-                                : issue.severity === 'medium'
-                                  ? 'bg-yellow-100 text-yellow-700'
-                                  : 'bg-green-100 text-green-700'
-                            }`}
-                          >
-                            {issue.severity === 'high'
-                              ? 'High Priority'
-                              : issue.severity === 'medium'
-                                ? 'Medium Priority'
-                                : 'Low Priority'}
-                          </span>
+                  )}
+                </div>
+
+                <div className="shrink-0 flex items-start">
+                  <span
+                    className={`inline-flex px-3 py-1.5 text-[10px] sm:text-xs rounded-lg font-extrabold uppercase tracking-wider border ${
+                      issue.severity === 'critical'
+                        ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                        : issue.severity === 'high'
+                          ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                          : issue.severity === 'medium'
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    }`}
+                  >
+                    {issue.severity}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* SSL Details Card */}
+      <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+        <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+          <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+            <Lock className="h-5 w-5 text-indigo-400" /> SSL Certificate Details
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 text-sm">
+          <div>
+            <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Valid Connection</span>
+            <span className={`inline-flex items-center gap-1.5 font-bold mt-1.5 ${ssl.valid ? 'text-emerald-400' : 'text-rose-400'}`}>
+              <span className={`w-2 h-2 rounded-full ${ssl.valid ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+              {ssl.valid ? 'Active & Trusted' : 'Invalid / Handshake Failed'}
+            </span>
+          </div>
+          <div>
+            <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Issuer CA</span>
+            <span className="font-semibold text-slate-200 mt-1.5 block">{ssl.issuer || 'Unknown'}</span>
+          </div>
+          <div>
+            <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Expiration Date</span>
+            <span className="font-semibold text-slate-200 mt-1.5 block">{ssl.expireDate ? new Date(ssl.expireDate).toLocaleDateString() : '—'}</span>
+          </div>
+          <div>
+            <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Days Remaining</span>
+            <span className={`font-bold mt-1.5 block ${sslDaysColor}`}>{ssl.daysRemaining ?? 0} days</span>
+          </div>
+          {ssl.error && (
+            <div className="col-span-1 sm:col-span-2 md:col-span-4 p-3 bg-red-500/10 border border-red-500/20 text-rose-400 text-xs rounded-xl font-mono">
+              <strong>Certificate Check Error:</strong> {ssl.error}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* DNS Records Card */}
+      <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+        <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+          <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+            <Globe className="h-5 w-5 text-indigo-400" /> DNS Configuration Audits
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0 space-y-4">
+          <div className="flex flex-wrap gap-3">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl font-bold border ${
+              dns.spf ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'
+            }`}>
+              SPF: {dns.spf ? 'Present' : 'Missing'}
+            </span>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl font-bold border ${
+              dns.dmarc ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'
+            }`}>
+              DMARC: {dns.dmarc ? 'Present' : 'Missing'}
+            </span>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl font-bold border ${
+              dns.mx ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'
+            }`}>
+              MX Records: {dns.mx ? 'Present' : 'Missing'}
+            </span>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl font-bold border ${
+              dns.ns ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'
+            }`}>
+              NS Records: {dns.ns ? 'Present' : 'Missing'}
+            </span>
+          </div>
+          {dns.spf && (
+            <div className="bg-slate-950/60 p-3.5 rounded-xl text-xs font-mono border border-slate-800 text-slate-300">
+              <strong className="text-slate-500 block mb-1">SPF Record:</strong> {dns.spf}
+            </div>
+          )}
+          {dns.dmarc && (
+            <div className="bg-slate-950/60 p-3.5 rounded-xl text-xs font-mono border border-slate-800 text-slate-300">
+              <strong className="text-slate-500 block mb-1">DMARC Record:</strong> {dns.dmarc}
+            </div>
+          )}
+          {dns.error && (
+            <div className="p-3 bg-red-500/10 border border-red-500/20 text-rose-400 text-xs rounded-xl font-mono">
+              <strong>DNS Lookup Error:</strong> {dns.error}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Cookie Audits Card */}
+      <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+        <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+          <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+            <Database className="h-5 w-5 text-indigo-400" /> Cookie Security Flag Audits
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0 overflow-x-auto">
+          {cookieAudit.length === 0 ? (
+            <div className="py-4 text-center text-slate-500 text-sm">
+              No session or persistent cookies were set in the response headers.
+            </div>
+          ) : (
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                  <th className="py-3 px-2">Cookie Name</th>
+                  <th className="py-3 px-2">HttpOnly</th>
+                  <th className="py-3 px-2">Secure</th>
+                  <th className="py-3 px-2">SameSite</th>
+                  <th className="py-3 px-2">Security Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-semibold">
+                {cookieAudit.map((cookie, idx) => {
+                  const isFullySecure = cookie.httpOnly && cookie.secure;
+                  return (
+                    <tr key={idx} className="hover:bg-slate-950/10">
+                      <td className="py-3.5 px-2 text-slate-200 font-mono text-xs">{cookie.name}</td>
+                      <td className="py-3.5 px-2">
+                        <span className={`text-xs ${cookie.httpOnly ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {cookie.httpOnly ? 'Yes' : 'Missing'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-2">
+                        <span className={`text-xs ${cookie.secure ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {cookie.secure ? 'Yes' : 'Missing'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-2 text-slate-300 text-xs font-mono">{cookie.sameSite || 'None'}</td>
+                      <td className="py-3.5 px-2">
+                        <Badge className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                          isFullySecure 
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                        }`}>
+                          {isFullySecure ? 'Secure' : 'Exposure Risk'}
+                        </Badge>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Exposed Files Card */}
+      {exposedFiles.length > 0 && (
+        <Card className="border border-red-500/20 bg-red-500/5 shadow-2xl p-6 sm:p-8 rounded-3xl">
+          <CardHeader className="p-0 pb-4 border-b border-red-500/20 mb-4">
+            <CardTitle className="text-xl font-bold text-red-400 flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-red-500" /> Exposed Sensitive Files
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 divide-y divide-slate-800">
+            {exposedFiles.map((file, idx) => (
+              <div key={idx} className="py-3 flex justify-between items-center text-sm font-mono text-red-400">
+                <span>{file}</span>
+                <span className="bg-red-500/15 border border-red-500/20 px-2 py-0.5 rounded text-[10px] uppercase font-extrabold tracking-wider">Exposed / 200 OK</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* CORS Issues Card */}
+      {corsIssues.length > 0 && (
+        <Card className="border border-amber-500/20 bg-amber-500/5 shadow-2xl p-6 sm:p-8 rounded-3xl">
+          <CardHeader className="p-0 pb-4 border-b border-amber-500/20 mb-4">
+            <CardTitle className="text-xl font-bold text-amber-400 flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-amber-500" /> CORS Scope Violations
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {corsIssues.map((issue, idx) => (
+              <div key={idx} className="py-3 flex justify-between items-center text-sm font-mono text-amber-400">
+                <span>{issue}</span>
+                <span className="bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded text-[10px] uppercase font-bold">Wildcard Access *</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Mixed Content Card */}
+      {mixedContent.length > 0 && (
+        <Card className="border border-amber-500/20 bg-amber-500/5 shadow-2xl p-6 sm:p-8 rounded-3xl">
+          <CardHeader className="p-0 pb-4 border-b border-amber-500/20 mb-4">
+            <CardTitle className="text-xl font-bold text-amber-400 flex items-center gap-2">
+              <Eye className="h-5 w-5 text-amber-500" /> Insecure Mixed Content Assets
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 divide-y divide-slate-800 max-h-60 overflow-y-auto pr-2">
+            {mixedContent.map((asset, idx) => (
+              <div key={idx} className="py-2.5 text-xs font-mono text-amber-300 overflow-x-auto">
+                <span className="text-red-400 font-bold block">[HTTP Asset]</span>
+                {asset}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* HTTP Redirect Chain Card */}
+      <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+        <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+          <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+            <Globe className="h-5 w-5 text-indigo-400" /> HTTP Redirect Chain Analysis
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm mb-2">
+            <div className="bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/60">
+              <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Redirect Count</span>
+              <span className="font-extrabold text-white text-lg mt-1 block">{redirects.redirectCount ?? 0} hops</span>
+            </div>
+            <div className="bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/60">
+              <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Enforces HTTPS</span>
+              <span className={`inline-flex items-center gap-1.5 font-bold mt-1.5 ${redirects.enforcesHttps ? 'text-emerald-400' : 'text-rose-400'}`}>
+                <span className={`w-2 h-2 rounded-full ${redirects.enforcesHttps ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+                {redirects.enforcesHttps ? 'Secure Enforcement' : 'No Redirection'}
+              </span>
+            </div>
+            <div className="bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/60">
+              <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Cross-Domain Redirect</span>
+              <span className={`inline-flex items-center gap-1.5 font-bold mt-1.5 ${redirects.isCrossDomain ? 'text-amber-400' : 'text-emerald-400'}`}>
+                <span className={`w-2 h-2 rounded-full ${redirects.isCrossDomain ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                {redirects.isCrossDomain ? 'Yes (Risk)' : 'No (Same Domain)'}
+              </span>
+            </div>
+          </div>
+
+          {redirects.chain && redirects.chain.length > 0 && (
+            <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800 space-y-3">
+              <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider mb-2">Hop Trace Chain</span>
+              {redirects.chain.map((hop, idx) => (
+                <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between text-xs py-2 border-b border-slate-800/50 last:border-0">
+                  <div className="flex items-center gap-2">
+                    <span className="h-5 w-5 bg-slate-900 rounded-full border border-slate-700 text-slate-300 font-bold flex items-center justify-center font-mono">
+                      {idx + 1}
+                    </span>
+                    <span className="font-mono text-slate-200 break-all">{hop.url}</span>
+                  </div>
+                  <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded sm:mt-0 mt-1 shrink-0 ${
+                    hop.status >= 300 && hop.status < 400 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  }`}>
+                    Status {hop.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Domain Registry WHOIS Details Card */}
+      <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+        <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+          <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+            <Globe className="h-5 w-5 text-indigo-400" /> Domain Registry (WHOIS) Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 text-sm">
+          <div>
+            <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Registrar</span>
+            <span className="font-semibold text-slate-200 mt-1.5 block break-words">{whois.registrar || 'Unknown'}</span>
+          </div>
+          <div>
+            <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Registration Date</span>
+            <span className="font-semibold text-slate-200 mt-1.5 block">
+              {whois.createdDate ? new Date(whois.createdDate).toLocaleDateString() : '—'}
+            </span>
+          </div>
+          <div>
+            <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Expiry Date</span>
+            <span className="font-semibold text-slate-200 mt-1.5 block">
+              {whois.expiryDate ? new Date(whois.expiryDate).toLocaleDateString() : '—'}
+            </span>
+          </div>
+          <div>
+            <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Days to Expiration</span>
+            {whois.daysRemaining !== null ? (
+              <span className={`font-extrabold mt-1.5 block text-lg ${
+                whois.daysRemaining < 7 ? 'text-red-400 animate-pulse'
+                : whois.daysRemaining < 30 ? 'text-amber-400'
+                : 'text-emerald-400'
+              }`}>
+                {whois.daysRemaining} days remaining
+              </span>
+            ) : (
+              <span className="font-semibold text-slate-200 mt-1.5 block">—</span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Open Port Detection Card */}
+      <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+        <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+          <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+            <Lock className="h-5 w-5 text-indigo-400" /> Active Service Port Scan (15 Ports Checked)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0 space-y-4 text-sm">
+          {!portScan.scanned ? (
+            <div className="py-4 text-center text-slate-500">
+              Port scanning details were not captured.
+            </div>
+          ) : portScan.openPorts && portScan.openPorts.length === 0 ? (
+            <div className="py-4 text-center text-emerald-400 font-semibold flex items-center justify-center gap-2">
+              <CheckCircle className="h-5 w-5 text-emerald-400" /> No publicly exposed database or administrative ports found.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                    <th className="py-2.5 px-2">Port Number</th>
+                    <th className="py-2.5 px-2">Common Service</th>
+                    <th className="py-2.5 px-2">Security Exposure Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 font-semibold">
+                  {portScan.openPorts.map((p, idx) => (
+                    <tr key={idx} className="hover:bg-slate-950/10">
+                      <td className="py-3 px-2 text-slate-200 font-mono text-sm">{p.port}</td>
+                      <td className="py-3 px-2 text-slate-350">{p.service}</td>
+                      <td className="py-3 px-2">
+                        <span className={`inline-flex px-2 py-0.5 text-[10px] font-extrabold uppercase rounded border ${
+                          p.dangerous 
+                            ? 'bg-red-500/10 text-red-400 border-red-500/20' 
+                            : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                        }`}>
+                          {p.dangerous ? 'Dangerous Exposure' : 'Open / Public'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Robots.txt Analysis Card */}
+      <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+        <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+          <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+            <FileText className="h-5 w-5 text-indigo-400" /> Robots.txt Path Auditor
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0 space-y-4 text-sm">
+          {!robots.exists ? (
+            <div className="py-4 text-center text-slate-500">
+              No robots.txt was detected on the target server.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Parsed Paths ({robots.paths?.length || 0})</span>
+                {robots.paths && robots.paths.length === 0 ? (
+                  <div className="text-slate-400 text-xs italic">No paths defined.</div>
+                ) : (
+                  <div className="max-h-52 overflow-y-auto bg-slate-950/40 border border-slate-800 p-3 rounded-xl font-mono text-xs text-slate-350 space-y-1.5">
+                    {robots.paths.slice(0, 30).map((path, idx) => (
+                      <div key={idx} className="truncate">{path}</div>
+                    ))}
+                    {robots.paths.length > 30 && (
+                      <div className="text-slate-500 text-[10px] pt-1">... and {robots.paths.length - 30} more paths</div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="space-y-3">
+                <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Sensitive Targets Exposed</span>
+                {robots.sensitiveFound && robots.sensitiveFound.length === 0 ? (
+                  <div className="text-emerald-400 text-xs font-semibold flex items-center gap-1.5 py-2">
+                    <CheckCircle className="h-4 w-4" /> No sensitive admin or config endpoints exposed.
+                  </div>
+                ) : (
+                  <div className="bg-red-500/5 border border-red-500/10 p-3 rounded-xl space-y-2">
+                    <p className="text-xs text-red-400 font-semibold">The following disallowed/allowed paths contain sensitive words:</p>
+                    <div className="max-h-36 overflow-y-auto space-y-1">
+                      {robots.sensitiveFound.map((p, idx) => (
+                        <div key={idx} className="text-xs font-mono text-rose-300 font-bold bg-rose-500/10 px-2.5 py-1 rounded border border-rose-500/20 truncate">
+                          {p}
                         </div>
                       ))}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        </div>
-
-        {/* Second Section: On-Page SEO Details - separate card at bottom */}
-        {result.seoDetails && (
-          <div className="border rounded-xl border-gray-200 bg-white p-6 shadow-sm mt-10">
-            <h2 className="text-xl font-semibold mb-6">On-Page SEO Details</h2>
-            {result.usedRenderedHtml === false && (
-              <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-                Results based on initial HTML; JS-rendered content may not be included. If your site uses React, Material UI, or similar frameworks, headings and meta tags may not appear here even if Google can see them.
-              </div>
-            )}
-            <SeoDetailCards seoDetails={result.seoDetails} url={result.url} />
-          </div>
-        )}
-
-        {/* Rankings Section */}
-        {result.rankings && (
-          <div className="border rounded-xl border-gray-200 bg-white p-6 shadow-sm mt-10">
-            <h2 className="text-xl font-semibold mb-1">Rankings</h2>
-            <p className="text-sm text-gray-500 mb-6">Top Organic Keyword Insights</p>
-            <div className="divide-y divide-gray-200">
-              <div className="flex justify-between items-center py-4">
-                <span className="text-sm text-gray-500">Primary Keyword</span>
-                <span className="font-bold text-gray-900">{result.rankings.primaryKeyword || '—'}</span>
-              </div>
-              <div className="flex justify-between items-center py-4">
-                <span className="text-sm text-gray-500">Word Count</span>
-                <span className="font-bold text-gray-900">{result.rankings.wordCount ?? '—'}</span>
-              </div>
-              <div className="flex justify-between items-center py-4">
-                <span className="text-sm text-gray-500">Keyword Density</span>
-                <span className="font-bold text-gray-900">{result.rankings.keywordDensity ?? '—'}</span>
-              </div>
-              <div className="flex justify-between items-center py-4">
-                <span className="text-sm text-gray-500">Keyword in Title</span>
-                <span className="font-bold text-gray-900">{result.rankings.keywordInTitle ? 'Yes' : 'No'}</span>
-              </div>
-              <div className="flex justify-between items-center py-4">
-                <span className="text-sm text-gray-500">Keyword in H1</span>
-                <span className="font-bold text-gray-900">{result.rankings.keywordInH1 ? 'Yes' : 'No'}</span>
+                )}
               </div>
             </div>
-            <div className="pt-4 mt-4 border-t border-gray-200">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Top Related Keywords</h3>
-              <div className="flex flex-wrap gap-2">
-                {(result.rankings.topRelatedKeywords || []).map((kw, i) => (
-                  <Badge key={i} variant="secondary">{kw}</Badge>
-                ))}
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Positives Card */}
+      {positives.length > 0 && (
+        <Card className="border border-emerald-500/20 bg-emerald-500/5 shadow-2xl p-6 sm:p-8 rounded-3xl">
+          <CardHeader className="p-0 pb-4 border-b border-emerald-500/20 mb-4">
+            <CardTitle className="text-xl font-bold text-emerald-400 flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-emerald-400" /> Security Safeguards Found
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 space-y-3">
+            {positives.map((pos, idx) => (
+              <div key={idx} className="flex items-start gap-2.5 text-sm text-slate-300">
+                <span className="text-emerald-400 font-bold shrink-0 mt-0.5">✓</span>
+                <p>{pos}</p>
               </div>
-            </div>
-          </div>
-        )}
-
-      </div>
-
-      {/* Modal */}
-      <ScreenshotModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        src={currentScreenshot}
-        type={modalType}
-        url={result.url}
-      />
-    </>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
-}
-
-function scoreToGrade(score) {
-  if (score == null || score < 0) return '—';
-  const s = Math.min(100, Math.round(score));
-  if (s >= 97) return 'A+';
-  if (s >= 93) return 'A';
-  if (s >= 90) return 'A-';
-  if (s >= 87) return 'B+';
-  if (s >= 83) return 'B';
-  if (s >= 80) return 'B-';
-  if (s >= 77) return 'C+';
-  if (s >= 73) return 'C';
-  if (s >= 70) return 'C-';
-  if (s >= 67) return 'D+';
-  if (s >= 63) return 'D';
-  if (s >= 60) return 'D-';
-  return 'F';
 }

@@ -2,22 +2,10 @@
  * Report Generator - Merges analyzer results into normalized report format
  */
 
-function normalizeIssue(issue) {
-  const base = {
-    type: issue.type || 'unknown',
-    severity: issue.severity || 'medium',
-    message: issue.message || String(issue),
-    fix: issue.fix ?? null
-  };
-  if (issue.pages) base.pages = issue.pages;
-  if (issue.examples) base.examples = issue.examples;
-  return base;
-}
-
-/** 0-100 to letter grade */
+/** 0-100 to letter grade - KEEP UNCHANGED */
 function scoreToGrade(score) {
-  if (score == null || score < 0) return null;
-  const s = Math.min(100, score);
+  if (score == null || score < 0) return 'F';
+  const s = Math.min(100, Math.round(score));
   if (s >= 97) return 'A+';
   if (s >= 93) return 'A';
   if (s >= 90) return 'A-';
@@ -33,43 +21,48 @@ function scoreToGrade(score) {
   return 'F';
 }
 
-function generateReport({ seoResult, securityResult, performanceResult, siteAuditResult, lighthouseResult, socialResult, rankingsData, backlinks, url, usedRenderedHtml }) {
-
+function generateReport({ securityResult, url, scanDuration }) {
   const report = {
     url,
     domain: null,
-    usedRenderedHtml: usedRenderedHtml ?? true,
-
-    seoScore: null,
-    securityScore: null,
-    performanceScore: null,
-    siteAuditScore: null,
-    siteAuditSummary: null,
-    linksScore: null,
-    usabilityScore: null,
-    socialScore: null,
-
-    overallScore: null,
-    overallGrade: null,
-
-    recommendations: 0,
-
-    categories: null,
-    radarData: [],
-
+    score: 0,
+    grade: 'F',
+    overallScore: 0,
+    overallGrade: 'F',
     generatedAt: new Date().toISOString(),
-
-    issues: {
-      seo: [],
-      security: [],
-      performance: [],
-      siteAudit: []
+    scanDuration: scanDuration || 0,
+    summary: '',
+    positives: [],
+    findings: [],
+    findingsByCategory: {},
+    sslDetails: {
+      valid: false,
+      expireDate: null,
+      daysRemaining: 0,
+      issuer: 'Unknown',
+      error: null
     },
-
-    performance: null
+    dnsDetails: {
+      spf: null,
+      dmarc: null,
+      mx: false,
+      ns: false,
+      error: null
+    },
+    exposedFiles: [],
+    // New audit fields
+    techStack: { cms: [], framework: [], server: [], analytics: [], libraries: [] },
+    cookieAudit: [],
+    corsIssues: [],
+    mixedContent: [],
+    portScanData: { scanned: false, openPorts: [], totalScanned: 0 },
+    whoisData: { exists: false, registrar: 'Unknown', createdDate: null, expiryDate: null, daysRemaining: null },
+    redirectData: { chain: [], redirectCount: 0, enforcesHttps: false, finalUrl: '', isCrossDomain: false },
+    robotsData: { exists: false, paths: [], sensitiveFound: [], raw: '' },
+    riskBreakdown: { critical: 0, high: 0, medium: 0, low: 0 },
+    topPriority: [],
+    complianceFlags: { gdpr: false, pci: false, hipaa: false }
   };
-
-  /* ---------------- DOMAIN ---------------- */
 
   try {
     report.domain = new URL(url).hostname;
@@ -77,192 +70,93 @@ function generateReport({ seoResult, securityResult, performanceResult, siteAudi
     report.domain = url;
   }
 
-  /* ---------------- LIGHTHOUSE (SEO, Performance, Usability, Links) ---------------- */
-
-  if (lighthouseResult) {
-    report.seoScore = lighthouseResult.seoScore ?? null;
-    report.performanceScore = lighthouseResult.performanceScore ?? null;
-    report.usabilityScore = lighthouseResult.usabilityScore ?? null;
-    report.linksScore = lighthouseResult.linksScore ?? null;
-    report.performance = lighthouseResult.metrics ?? null;
-    report.issues.seo = [...(lighthouseResult.issues?.seo || []), ...(lighthouseResult.issues?.accessibility || [])].map(normalizeIssue);
-    report.issues.performance = (lighthouseResult.issues?.performance || []).map(normalizeIssue);
-  }
-
-  /* ---------------- SEO (fallback when no Lighthouse) ---------------- */
-
-  if (seoResult && !lighthouseResult) {
-    report.seoScore = seoResult.score;
-    report.issues.seo = (seoResult.issues || []).map(normalizeIssue);
-    report.usabilityScore = seoResult.details?.usabilityScore ?? null;
-    report.socialScore = seoResult.details?.socialScore ?? null;
-  }
-
-  /* ---------------- SEO DETAILS (granular data for detail cards) ---------------- */
-
-  if (seoResult?.details) {
-    report.seoDetails = seoResult.details;
-  }
-
-  /* ---------------- RANKINGS (keyword insights) ---------------- */
-
-  if (rankingsData) {
-    report.rankings = rankingsData;
-  }
-
-  /* ---------------- LINKS (backlink data) ---------------- */
-
-  if (backlinks) {
-    report.links = {
-      summary: backlinks.summary ?? {},
-      topBacklinks: backlinks.topBacklinks ?? [],
-      anchors: backlinks.anchors ?? [],
-      tlds: backlinks.tlds ?? {},
-      countries: backlinks.countries ?? {},
-      apiError: backlinks.apiError ?? null,
-    };
-    const referringDomains = backlinks.summary?.referringDomains ?? 0;
-    report.linksScore = Math.min(100, referringDomains * 1.2);
-  }
-
-  /* ---------------- SOCIAL (from socialMetaHelper) ---------------- */
-
-  if (socialResult) {
-    report.socialScore = socialResult.socialScore ?? null;
-    report.socialDetails = socialResult.details ?? null;
-  }
-
-  /* ---------------- SITE AUDIT ---------------- */
-
-  if (siteAuditResult) {
-    report.siteAuditScore = siteAuditResult.score;
-    report.siteAuditSummary = siteAuditResult.summary;
-    report.issues.siteAudit = (siteAuditResult.issues || []).map(normalizeIssue);
-
-    report.linksScore = siteAuditResult.score;
-  }
-  else if (seoResult?.details && !lighthouseResult) {
-
-    const d = seoResult.details;
-
-    let linksScore = 100;
-
-    if (!d.hasCanonical) linksScore -= 15;
-
-    if ((d.internalLinks ?? 0) === 0 && (d.externalLinks ?? 0) === 0)
-      linksScore -= 10;
-
-    report.linksScore = Math.max(0, linksScore);
-  }
-
-  /* ---------------- SECURITY ---------------- */
-
   if (securityResult) {
-    report.securityScore = securityResult.score;
-    report.issues.security = (securityResult.issues || []).map(normalizeIssue);
-  }
+    report.score = Math.max(0, Math.min(100, securityResult.score));
+    report.grade = scoreToGrade(report.score);
+    report.overallScore = report.score;
+    report.overallGrade = report.grade;
+    report.findings = securityResult.findings || [];
+    report.summary = securityResult.summary || '';
+    report.positives = securityResult.positives || [];
+    report.exposedFiles = securityResult.exposedFiles || [];
 
-  /* ---------------- PERFORMANCE (fallback when no Lighthouse) ---------------- */
+    // Map new fields
+    report.techStack = securityResult.techStack || report.techStack;
+    report.cookieAudit = securityResult.cookieAudit || [];
+    report.corsIssues = securityResult.corsIssues || [];
+    report.mixedContent = securityResult.mixedContent || [];
+    report.portScanData = securityResult.portScanData || report.portScanData;
+    report.whoisData = securityResult.whoisData || report.whoisData;
+    report.redirectData = securityResult.redirectData || report.redirectData;
+    report.robotsData = securityResult.robotsData || report.robotsData;
 
-  if (performanceResult && !lighthouseResult) {
-
-    report.performanceScore =
-      performanceResult.performanceScore ??
-      performanceResult.score ??
-      null;
-
-    report.performance = performanceResult.metrics ?? null;
-
-    report.issues.performance =
-      (performanceResult.issues || []).map(normalizeIssue);
-  }
-
-  /* ---------------- OVERALL SCORE ---------------- */
-
-  const scores = [];
-
-  if (report.seoScore != null)
-    scores.push({ w: 1, s: report.seoScore });
-
-  if (report.securityScore != null)
-    scores.push({ w: 1.1, s: report.securityScore });
-
-  if (report.linksScore != null)
-    scores.push({ w: 0.8, s: report.linksScore });
-
-  if (report.usabilityScore != null)
-    scores.push({ w: 0.9, s: report.usabilityScore });
-
-  if (report.performanceScore != null)
-    scores.push({ w: 1, s: report.performanceScore });
-
-  if (report.socialScore != null)
-    scores.push({ w: 0.6, s: report.socialScore });
-
-  if (scores.length > 0) {
-
-    const totalW = scores.reduce((a, x) => a + x.w, 0);
-
-    const weighted =
-      scores.reduce((a, x) => a + x.w * x.s, 0) / totalW;
-
-    report.overallScore = Math.round(weighted);
-
-    report.overallGrade = scoreToGrade(report.overallScore);
-  }
-
-  /* ---------------- CATEGORY SCORES (UI circles) ---------------- */
-
-  report.categories = {
-    seo: {
-      score: report.seoScore,
-      grade: scoreToGrade(report.seoScore)
-    },
-
-    security: {
-      score: report.securityScore,
-      grade: scoreToGrade(report.securityScore)
-    },
-
-    links: {
-      score: report.linksScore,
-      grade: scoreToGrade(report.linksScore)
-    },
-
-    usability: {
-      score: report.usabilityScore,
-      grade: scoreToGrade(report.usabilityScore)
-    },
-
-    performance: {
-      score: report.performanceScore,
-      grade: scoreToGrade(report.performanceScore)
-    },
-
-    social: {
-      score: report.socialScore,
-      grade: scoreToGrade(report.socialScore)
+    // Parse SSL details
+    if (securityResult.sslData) {
+      report.sslDetails = {
+        valid: securityResult.sslData.valid || false,
+        expireDate: securityResult.sslData.expireDate || null,
+        daysRemaining: securityResult.sslData.daysRemaining || 0,
+        issuer: securityResult.sslData.issuer || 'Unknown',
+        error: securityResult.sslData.error || null
+      };
     }
-  };
 
-  /* ---------------- RADAR CHART DATA ---------------- */
+    // Parse DNS details
+    if (securityResult.dnsData) {
+      report.dnsDetails = {
+        spf: securityResult.dnsData.spf || null,
+        dmarc: securityResult.dnsData.dmarc || null,
+        mx: securityResult.dnsData.mx || false,
+        ns: securityResult.dnsData.ns || false,
+        error: securityResult.dnsData.error || null
+      };
+    }
 
-  report.radarData = [
-    report.seoScore || 0,
-    report.securityScore || 0,
-    report.linksScore || 0,
-    report.usabilityScore || 0,
-    report.performanceScore || 0,
-    report.socialScore || 0
-  ];
+    // Group findings and calculate severity counts
+    const grouped = {};
+    const breakdown = { critical: 0, high: 0, medium: 0, low: 0 };
+    for (const finding of report.findings) {
+      const cat = finding.category || 'General';
+      if (!grouped[cat]) {
+        grouped[cat] = [];
+      }
+      grouped[cat].push(finding);
 
-  /* ---------------- RECOMMENDATIONS COUNT ---------------- */
+      const sev = finding.severity?.toLowerCase();
+      if (breakdown[sev] !== undefined) {
+        breakdown[sev]++;
+      }
+    }
+    report.findingsByCategory = grouped;
+    report.riskBreakdown = breakdown;
 
-  report.recommendations =
-    report.issues.seo.length +
-    report.issues.security.length +
-    report.issues.performance.length +
-    report.issues.siteAudit.length;
+    // Calculate top 3 priority findings (ordered critical -> high -> medium -> low)
+    const severityOrder = { critical: 4, high: 3, medium: 2, low: 1 };
+    const sortedFindings = [...report.findings].sort((a, b) => {
+      const aVal = severityOrder[a.severity?.toLowerCase()] || 0;
+      const bVal = severityOrder[b.severity?.toLowerCase()] || 0;
+      return bVal - aVal;
+    });
+    report.topPriority = sortedFindings.slice(0, 3);
+
+    // Compute compliance risks
+    const hasCookieRisk = report.findings.some(f => f.category === 'Cookies');
+    const hasSslRisk = report.findings.some(f => f.category === 'SSL' || f.id?.includes('ssl') || f.id?.includes('https'));
+    const hasExposedRisk = report.findings.some(f => f.id?.includes('exposed') || f.id?.includes('file'));
+    const hasHstsRisk = report.findings.some(f => f.id?.includes('hsts') || f.id?.includes('strict-transport'));
+
+    // Fail GDPR if domain registration expires in less than 30 days
+    const domainExpiresSoon = report.whoisData && report.whoisData.exists && report.whoisData.daysRemaining !== null && report.whoisData.daysRemaining < 30;
+    const gdpr = hasCookieRisk || hasSslRisk || hasExposedRisk || domainExpiresSoon;
+
+    // Fail PCI if open dangerous ports exist
+    const hasOpenDangerousPorts = report.portScanData && report.portScanData.openPorts && report.portScanData.openPorts.some(p => p.dangerous);
+    const pci = report.score < 75 || report.findings.some(f => f.severity === 'critical' || f.severity === 'high') || hasOpenDangerousPorts;
+
+    const hipaa = hasHstsRisk || hasSslRisk || report.findings.some(f => f.severity === 'critical');
+
+    report.complianceFlags = { gdpr, pci, hipaa };
+  }
 
   return report;
 }

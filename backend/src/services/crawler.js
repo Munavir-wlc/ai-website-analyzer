@@ -1,160 +1,106 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
-const { launchBrowser } = require('../utils/browserLaunch');
+const sslChecker = require('ssl-checker').default;
+const dns = require('dns').promises;
+const net = require('net');
+const whoiser = require('whoiser');
 
-const CRAWL_TIMEOUT = 30000; // 30 seconds
-
-/**
- * Fetch a URL using headless Puppeteer browser as a fallback
- */
-async function crawlWithBrowser(url) {
-  let browser;
-  try {
-    console.log(`[crawler] Launching browser fallback for: ${url}`);
-    browser = await launchBrowser({ headless: 'new' });
-    const page = await browser.newPage();
-    page.setDefaultNavigationTimeout(20000);
-    page.setDefaultTimeout(20000);
-
-    // Capture headers and status code of the main request
-    let responseHeaders = {};
-    let statusCode = 200;
-    
-    page.on('response', (res) => {
-      const resUrl = res.url();
-      // Compare URLs ignoring trailing slash
-      if (resUrl.replace(/\/$/, '') === url.replace(/\/$/, '')) {
-        responseHeaders = res.headers();
-        statusCode = res.status();
-      }
-    });
-
-    await page.goto(url, { waitUntil: 'networkidle2' });
-    
-    const html = await page.content();
-    const finalUrl = page.url();
-    
-    return {
-      html,
-      url: finalUrl,
-      finalUrl,
-      statusCode,
-      headers: responseHeaders,
-    };
-  } catch (err) {
-    console.error(`[crawler] Browser fallback crawl failed: ${err.message}`);
-    throw err;
-  } finally {
-    if (browser) await browser.close();
-  }
-}
+const CRAWL_TIMEOUT = 15000; // 15 seconds
 
 /**
- * Fetch a URL and return HTML, headers, and redirect info
+ * Fetch a URL and return HTML, headers, and cheerio object
  */
 async function crawl(url) {
   const normalizedUrl = normalizeUrl(url);
-  let response;
-  let useBrowserFallback = false;
 
   try {
-    response = await axios({
+    const response = await axios({
       url: normalizedUrl,
       method: 'GET',
       timeout: CRAWL_TIMEOUT,
       maxRedirects: 5,
-      validateStatus: (status) => status >= 200 && status < 400, // Reject 4xx/5xx to trigger browser fallback
       responseType: 'text',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; AI-Website-Analyzer/1.0)'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       }
     });
-  } catch (err) {
-    console.warn(`[crawler] Axios fetch failed: ${err.message}. Attempting browser fallback...`);
-    useBrowserFallback = true;
-  }
 
-  let crawlResult;
-
-  if (useBrowserFallback) {
-    try {
-      const browserResult = await crawlWithBrowser(normalizedUrl);
-      crawlResult = {
-        html: browserResult.html,
-        url: browserResult.url,
-        finalUrl: browserResult.finalUrl,
-        statusCode: browserResult.statusCode,
-        headers: browserResult.headers,
-        redirectChain: [normalizedUrl]
-      };
-    } catch (fallbackErr) {
-      console.error(`[crawler] All crawl attempts failed for: ${normalizedUrl}`);
-      return null;
-    }
-  } else {
+    const html = typeof response.data === 'string' ? response.data : '';
     const finalUrl = response.request?.res?.responseUrl || response.config?.url || normalizedUrl;
-    crawlResult = {
-      html: typeof response.data === 'string' ? response.data : '',
+    const $ = cheerio.load(html);
+
+    return {
+      html,
       url: finalUrl,
       finalUrl,
       statusCode: response.status,
       headers: response.headers,
-      redirectChain: response.request?.path ? [normalizedUrl] : [normalizedUrl]
+      redirectChain: [normalizedUrl],
+      $
     };
+  } catch (err) {
+    console.error(`[crawler] Crawl failed for ${normalizedUrl}: ${err.message}`);
+    return null;
   }
-
-  const baseUrl = new URL(crawlResult.finalUrl).origin;
-  const [robotsTxt, sitemapXml] = await Promise.all([
-    fetchRobotsTxt(baseUrl),
-    fetchSitemap(baseUrl)
-  ]);
-
-  const $ = cheerio.load(crawlResult.html);
-
-  return {
-    ...crawlResult,
-    $,
-    robotsTxt,
-    sitemapXml
-  };
 }
 
 /**
- * Fetch robots.txt from base URL
+ * Fetch and parse robots.txt to detect sensitive exposed endpoints
  */
 async function fetchRobotsTxt(baseUrl) {
   try {
-    const url = new URL('/robots.txt', baseUrl).href;
-    const response = await axios({
-      url,
-      method: 'GET',
+    const origin = new URL(baseUrl).origin;
+    const robotsUrl = `${origin}/robots.txt`;
+    const res = await axios.get(robotsUrl, {
       timeout: 5000,
-      validateStatus: (s) => s < 500,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AI-Website-Analyzer/1.0)' }
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
     });
-    return response.status === 200 ? response.data : null;
-  } catch {
-    return null;
+    
+    if (res.status !== 200) {
+      return { exists: false, paths: [], sensitiveFound: [], raw: '' };
+    }
+    
+    const raw = typeof res.data === 'string' ? res.data : '';
+    const lines = raw.split(/\r?\n/);
+    const paths = [];
+    const sensitiveKeywords = [
+      '/admin', '/api', '/config', '/backup', '/database',
+      '/phpmyadmin', '/wp-admin', '/dashboard', '/.env',
+      '/private', '/secret', '/internal', '/dev'
+    ];
+    
+    for (const line of lines) {
+      const match = line.match(/^\s*(Allow|Disallow)\s*:\s*(.+)$/i);
+      if (match) {
+        const path = match[2].trim();
+        if (path && !paths.includes(path)) {
+          paths.push(path);
+        }
+      }
+    }
+    
+    const sensitiveFound = paths.filter(path => 
+      sensitiveKeywords.some(keyword => path.toLowerCase().includes(keyword.toLowerCase()))
+    );
+    
+    return {
+      exists: true,
+      paths,
+      sensitiveFound,
+      raw
+    };
+  } catch (err) {
+    return { exists: false, paths: [], sensitiveFound: [], raw: '' };
   }
 }
 
 /**
- * Fetch sitemap.xml from base URL
+ * Fetch sitemap.xml - disabled for simplification
  */
 async function fetchSitemap(baseUrl) {
-  try {
-    const url = new URL('/sitemap.xml', baseUrl).href;
-    const response = await axios({
-      url,
-      method: 'GET',
-      timeout: 5000,
-      validateStatus: (s) => s < 500,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AI-Website-Analyzer/1.0)' }
-    });
-    return response.status === 200 ? response.data : null;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 /**
@@ -168,9 +114,379 @@ function normalizeUrl(url) {
   return u;
 }
 
+/**
+ * Check SSL validity and expiry (8 second timeout)
+ */
+async function checkSSL(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    const res = await Promise.race([
+      sslChecker(hostname),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('SSL check timeout')), 8000))
+    ]);
+
+    return {
+      valid: res.valid,
+      expireDate: res.validTo,
+      daysRemaining: res.daysRemaining,
+      issuer: res.validFor?.[0] || 'Unknown',
+      error: null
+    };
+  } catch (err) {
+    return {
+      valid: false,
+      expireDate: null,
+      daysRemaining: 0,
+      issuer: 'Unknown',
+      error: err.message
+    };
+  }
+}
+
+/**
+ * Check DNS records using dns.promises
+ */
+async function checkDNS(domain) {
+  let spf = null;
+  let dmarc = null;
+  let mx = false;
+  let ns = false;
+  let error = null;
+
+  try {
+    const txt = await dns.resolveTxt(domain);
+    const record = txt.flat().find(r => r.startsWith('v=spf1'));
+    if (record) spf = record;
+  } catch (_) {}
+
+  try {
+    const txt = await dns.resolveTxt(`_dmarc.${domain}`);
+    const record = txt.flat().find(r => r.startsWith('v=DMARC1'));
+    if (record) dmarc = record;
+  } catch (_) {}
+
+  try {
+    const mxRecords = await dns.resolveMx(domain);
+    mx = mxRecords.length > 0;
+  } catch (_) {}
+
+  try {
+    const nsRecords = await dns.resolveNs(domain);
+    ns = nsRecords.length > 0;
+  } catch (_) {}
+
+  return { spf, dmarc, mx, ns, error };
+}
+
+/**
+ * Check for exposed sensitive files (5 second timeout per request)
+ */
+async function checkExposedFiles(baseUrl) {
+  const paths = [
+    '/.env',
+    '/.git/config',
+    '/wp-config.php',
+    '/phpinfo.php',
+    '/backup.zip',
+    '/.htaccess',
+    '/admin',
+    '/robots.txt',
+    '/.well-known/security.txt'
+  ];
+  const exposed = [];
+  
+  try {
+    const origin = new URL(baseUrl).origin;
+    await Promise.all(paths.map(async (p) => {
+      try {
+        const res = await axios.get(`${origin}${p}`, {
+          timeout: 5000,
+          validateStatus: (status) => status === 200,
+          maxRedirects: 2,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+        if (res.status === 200) {
+          exposed.push(p);
+        }
+      } catch (_) {}
+    }));
+  } catch (_) {}
+
+  return exposed;
+}
+
+/**
+ * Test PUT, DELETE, TRACE HTTP methods (5 second timeout)
+ */
+async function checkHttpMethods(url) {
+  const methods = ['PUT', 'DELETE', 'TRACE'];
+  const results = { put: false, delete: false, trace: false };
+
+  try {
+    await Promise.all(methods.map(async (method) => {
+      try {
+        const res = await axios({
+          url,
+          method,
+          timeout: 5000,
+          validateStatus: () => true,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+        const status = res.status;
+        if (status !== 405 && status !== 501) {
+          results[method.toLowerCase()] = true;
+        }
+      } catch (_) {}
+    }));
+  } catch (_) {
+    return { put: false, delete: false, trace: false };
+  }
+
+  return results;
+}
+
+/**
+ * Helper to check TCP port connection using a socket with a 2-second timeout
+ */
+function checkPort(domain, port) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(2000);
+    
+    socket.on('connect', () => {
+      socket.destroy();
+      resolve({ port, open: true });
+    });
+    
+    socket.on('timeout', () => {
+      socket.destroy();
+      resolve({ port, open: false });
+    });
+    
+    socket.on('error', () => {
+      socket.destroy();
+      resolve({ port, open: false });
+    });
+    
+    socket.connect(port, domain);
+  });
+}
+
+/**
+ * Scan standard administrative and database ports to check public exposure
+ */
+async function portScan(domain) {
+  const ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 1433, 3306, 3389, 5432, 8080];
+  const services = {
+    21: { name: 'FTP', dangerous: true },
+    22: { name: 'SSH', dangerous: false },
+    23: { name: 'Telnet', dangerous: true },
+    25: { name: 'SMTP', dangerous: false },
+    53: { name: 'DNS', dangerous: false },
+    80: { name: 'HTTP', dangerous: false },
+    110: { name: 'POP3', dangerous: false },
+    143: { name: 'IMAP', dangerous: false },
+    443: { name: 'HTTPS', dangerous: false },
+    445: { name: 'SMB', dangerous: true },
+    1433: { name: 'MSSQL', dangerous: true },
+    3306: { name: 'MySQL', dangerous: true },
+    3389: { name: 'RDP', dangerous: true },
+    5432: { name: 'Postgres', dangerous: true },
+    8080: { name: 'HTTP-Alt', dangerous: false }
+  };
+
+  const cleanDomain = (() => {
+    try {
+      if (/^https?:\/\//i.test(domain)) {
+        return new URL(domain).hostname;
+      }
+      return domain;
+    } catch (_) {
+      return domain;
+    }
+  })();
+
+  try {
+    const results = await Promise.all(ports.map(port => checkPort(cleanDomain, port)));
+    const openPorts = results.filter(r => r.open).map(r => {
+      const svc = services[r.port];
+      return {
+        port: r.port,
+        service: svc.name,
+        dangerous: svc.dangerous
+      };
+    });
+    
+    return {
+      scanned: true,
+      openPorts,
+      totalScanned: ports.length
+    };
+  } catch (err) {
+    return {
+      scanned: false,
+      openPorts: [],
+      totalScanned: 0,
+      error: err.message
+    };
+  }
+}
+
+/**
+ * Manually trace HTTP redirect chain up to 10 hops
+ */
+async function analyzeRedirects(url) {
+  const chain = [];
+  let currentUrl = normalizeUrl(url);
+  let isCrossDomain = false;
+  let enforcesHttps = false;
+  
+  let initialUrlObj;
+  try {
+    initialUrlObj = new URL(currentUrl);
+  } catch (err) {
+    return {
+      chain: [],
+      redirectCount: 0,
+      enforcesHttps: false,
+      finalUrl: currentUrl,
+      isCrossDomain: false
+    };
+  }
+  
+  const initialHostname = initialUrlObj.hostname.replace(/^www\./i, '');
+  const initialProtocol = initialUrlObj.protocol;
+  const seenUrls = new Set();
+  
+  try {
+    for (let hop = 0; hop < 10; hop++) {
+      if (seenUrls.has(currentUrl)) {
+        break;
+      }
+      seenUrls.add(currentUrl);
+
+      const res = await axios.get(currentUrl, {
+        maxRedirects: 0,
+        validateStatus: () => true,
+        timeout: 5000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
+
+      chain.push({
+        url: currentUrl,
+        status: res.status,
+        headers: res.headers || {}
+      });
+
+      const location = res.headers['location'];
+      const isRedirect = res.status >= 300 && res.status < 400 && location;
+      
+      if (!isRedirect) {
+        break;
+      }
+
+      currentUrl = new URL(location, currentUrl).toString();
+    }
+  } catch (err) {
+    if (chain.length === 0) {
+      chain.push({
+        url: currentUrl,
+        status: 500,
+        headers: {}
+      });
+    }
+  }
+
+  const finalUrl = chain[chain.length - 1].url;
+  let finalHostname = '';
+  try {
+    finalHostname = new URL(finalUrl).hostname.replace(/^www\./i, '');
+  } catch (_) {
+    finalHostname = finalUrl;
+  }
+  
+  if (initialHostname !== finalHostname) {
+    isCrossDomain = true;
+  }
+
+  if (initialProtocol === 'http:') {
+    const hasHttpsHop = chain.some(hop => hop.url.startsWith('https://'));
+    if (hasHttpsHop) {
+      enforcesHttps = true;
+    }
+  } else if (initialProtocol === 'https:') {
+    enforcesHttps = true;
+  }
+
+  return {
+    chain,
+    redirectCount: Math.max(0, chain.length - 1),
+    enforcesHttps,
+    finalUrl,
+    isCrossDomain
+  };
+}
+
+/**
+ * WHOIS domain lookup using whoiser to check expiry details
+ */
+async function whoisLookup(domain) {
+  try {
+    const cleanDomain = domain.replace(/^www\./i, '');
+    const rawResult = await whoiser.whoisDomain(cleanDomain, { follow: 2, timeout: 5000 });
+    const first = whoiser.firstResult(rawResult);
+    if (!first) {
+      return { exists: false, registrar: 'Unknown', createdDate: null, expiryDate: null, daysRemaining: null };
+    }
+
+    const registrar = first['Registrar'] || first['registrar'] || 'Unknown';
+    const expiryDateStr = first['Expiry Date'] || first['Registry Expiry Date'] || first['expires'] || first['Expiration Date'] || null;
+    const createdDateStr = first['Created Date'] || first['Creation Date'] || first['registered'] || first['Registration Date'] || null;
+
+    let daysRemaining = null;
+    if (expiryDateStr) {
+      const expiry = new Date(expiryDateStr);
+      if (!isNaN(expiry.getTime())) {
+        const diffTime = expiry.getTime() - Date.now();
+        daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+      }
+    }
+
+    return {
+      exists: true,
+      registrar,
+      createdDate: createdDateStr,
+      expiryDate: expiryDateStr,
+      daysRemaining
+    };
+  } catch (err) {
+    console.error(`[crawler] WHOIS lookup failed for ${domain}: ${err.message}`);
+    return {
+      exists: false,
+      registrar: 'Unknown',
+      createdDate: null,
+      expiryDate: null,
+      daysRemaining: null
+    };
+  }
+}
+
 module.exports = {
   crawl,
   fetchRobotsTxt,
   fetchSitemap,
-  normalizeUrl
+  normalizeUrl,
+  checkSSL,
+  checkDNS,
+  checkExposedFiles,
+  checkHttpMethods,
+  portScan,
+  analyzeRedirects,
+  whoisLookup
 };
