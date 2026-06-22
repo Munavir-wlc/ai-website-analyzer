@@ -71,11 +71,34 @@ function generateReport({ securityResult, url, scanDuration }) {
   }
 
   if (securityResult) {
-    report.score = Math.max(0, Math.min(100, securityResult.score));
+    report.findings = securityResult.findings || [];
+    
+    // Recalculate score dynamically to handle additional findings (like XSS/SQLi or multi-page issues)
+    let calculatedScore = 100;
+    for (const finding of report.findings) {
+      if (finding.id === 'sensitive-robots-paths') continue;
+      
+      const severity = finding.severity?.toLowerCase();
+      const deductions = {
+        critical: 20,
+        high: 15,
+        medium: 8,
+        low: 4
+      };
+      const points = deductions[severity] || 5;
+      calculatedScore -= points;
+    }
+
+    const robots = securityResult.robotsData || report.robotsData;
+    if (robots && robots.exists && robots.sensitiveFound && robots.sensitiveFound.length > 0) {
+      const robotsDeduction = Math.min(20, robots.sensitiveFound.length * 5);
+      calculatedScore -= robotsDeduction;
+    }
+
+    report.score = Math.max(0, calculatedScore);
     report.grade = scoreToGrade(report.score);
     report.overallScore = report.score;
     report.overallGrade = report.grade;
-    report.findings = securityResult.findings || [];
     report.summary = securityResult.summary || '';
     report.positives = securityResult.positives || [];
     report.exposedFiles = securityResult.exposedFiles || [];

@@ -37,7 +37,12 @@ function extractUrlsFromSitemap(xml) {
   return urls;
 }
 
-async function fetchPage(url) {
+async function fetchPage(url, authOptions = {}) {
+  const { authCookie, authHeader } = authOptions;
+  const requestHeaders = { 'User-Agent': USER_AGENT };
+  if (authHeader) requestHeaders['Authorization'] = authHeader;
+  if (authCookie) requestHeaders['Cookie'] = authCookie;
+
   const res = await axios({
     url,
     method: 'GET',
@@ -45,7 +50,7 @@ async function fetchPage(url) {
     maxRedirects: 5,
     validateStatus: () => true,
     responseType: 'text',
-    headers: { 'User-Agent': USER_AGENT },
+    headers: requestHeaders,
   });
   return {
     url: res.request?.res?.responseUrl || res.config?.url || url,
@@ -55,7 +60,7 @@ async function fetchPage(url) {
   };
 }
 
-async function crawlSite(startUrl) {
+async function crawlSite(startUrl, authOptions = {}) {
   const start = Date.now();
   const baseOrigin = new URL(startUrl).origin;
   const visited = new Set();
@@ -87,7 +92,7 @@ async function crawlSite(startUrl) {
       const results = await Promise.allSettled(
         batch.filter(u => !visited.has(u)).map(async (url) => {
           visited.add(url);
-          const data = await fetchPage(url);
+          const data = await fetchPage(url, authOptions);
           const $ = cheerio.load(data.html || '');
           const links = [];
           $('a[href]').each((_, el) => {

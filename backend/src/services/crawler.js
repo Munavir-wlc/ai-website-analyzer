@@ -4,25 +4,39 @@ const sslChecker = require('ssl-checker').default;
 const dns = require('dns').promises;
 const net = require('net');
 const whoiser = require('whoiser');
+const { isSafeUrl } = require('../utils/ssrfGuard');
 
 const CRAWL_TIMEOUT = 15000; // 15 seconds
 
 /**
  * Fetch a URL and return HTML, headers, and cheerio object
  */
-async function crawl(url) {
+async function crawl(url, auth = {}) {
   const normalizedUrl = normalizeUrl(url);
+  if (!await isSafeUrl(normalizedUrl)) {
+    console.error(`[crawler] Crawl blocked by SSRF guard for ${normalizedUrl}`);
+    return null;
+  }
 
   try {
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    };
+
+    if (auth.authHeader) {
+      headers['Authorization'] = auth.authHeader;
+    }
+    if (auth.authCookie) {
+      headers['Cookie'] = auth.authCookie;
+    }
+
     const response = await axios({
       url: normalizedUrl,
       method: 'GET',
       timeout: CRAWL_TIMEOUT,
       maxRedirects: 5,
       responseType: 'text',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
+      headers
     });
 
     const html = typeof response.data === 'string' ? response.data : '';
@@ -47,15 +61,22 @@ async function crawl(url) {
 /**
  * Fetch and parse robots.txt to detect sensitive exposed endpoints
  */
-async function fetchRobotsTxt(baseUrl) {
+async function fetchRobotsTxt(baseUrl, auth = {}) {
   try {
     const origin = new URL(baseUrl).origin;
+    if (!await isSafeUrl(origin)) {
+      return { exists: false, paths: [], sensitiveFound: [], raw: '' };
+    }
     const robotsUrl = `${origin}/robots.txt`;
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    };
+    if (auth.authHeader) headers['Authorization'] = auth.authHeader;
+    if (auth.authCookie) headers['Cookie'] = auth.authCookie;
+
     const res = await axios.get(robotsUrl, {
       timeout: 5000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
+      headers
     });
     
     if (res.status !== 200) {
@@ -120,16 +141,35 @@ function normalizeUrl(url) {
 async function checkSSL(url) {
   try {
     const hostname = new URL(url).hostname;
+    if (!await isSafeUrl(hostname)) {
+      return {
+        valid: false,
+        expireDate: null,
+        daysRemaining: 0,
+        issuer: 'Unknown',
+        error: 'Blocked by SSRF guard'
+      };
+    }
     const res = await Promise.race([
       sslChecker(hostname),
       new Promise((_, reject) => setTimeout(() => reject(new Error('SSL check timeout')), 8000))
     ]);
 
+    console.log('[crawler] checkSSL raw response:', res);
+
+    let rawIssuer = res.issuer || res.ca || res.certIssuer || res.validFor;
+    if (Array.isArray(rawIssuer)) {
+      rawIssuer = rawIssuer[0];
+    }
+    const issuer = typeof rawIssuer === 'object' && rawIssuer !== null
+      ? (rawIssuer.O || rawIssuer.CN || JSON.stringify(rawIssuer))
+      : (rawIssuer || 'Unknown');
+
     return {
       valid: res.valid,
       expireDate: res.validTo,
       daysRemaining: res.daysRemaining,
-      issuer: res.validFor?.[0] || 'Unknown',
+      issuer,
       error: null
     };
   } catch (err) {
@@ -147,41 +187,125 @@ async function checkSSL(url) {
  * Check DNS records using dns.promises
  */
 async function checkDNS(domain) {
+  if (!await isSafeUrl(domain)) {
+    return { spf: null, spfPresent: false, dmarc: null, dmarcPresent: false, mx: false, ns: false, error: 'Blocked by SSRF guard' };
+  }
+
   let spf = null;
+  let spfPresent = false;
   let dmarc = null;
+  let dmarcPresent = false;
   let mx = false;
   let ns = false;
-  let error = null;
 
-  try {
-    const txt = await dns.resolveTxt(domain);
-    const record = txt.flat().find(r => r.startsWith('v=spf1'));
-    if (record) spf = record;
-  } catch (_) {}
+  // Determine potential domains to query (subdomain first, then fallback to base root domain)
+  const domainsToTry = [domain];
+  if (domain.toLowerCase().startsWith('www.')) {
+    domainsToTry.push(domain.substring(4));
+  } else {
+    const parts = domain.split('.');
+    if (parts.length > 2) {
+      const secondToLast = parts[parts.length - 2].toLowerCase();
+      const rootParts = ['co', 'com', 'org', 'net', 'edu', 'gov'].includes(secondToLast) && parts.length > 3
+        ? parts.slice(-3)
+        : parts.slice(-2);
+      const rootDomain = rootParts.join('.');
+      if (rootDomain !== domain) {
+        domainsToTry.push(rootDomain);
+      }
+    }
+  }
 
-  try {
-    const txt = await dns.resolveTxt(`_dmarc.${domain}`);
-    const record = txt.flat().find(r => r.startsWith('v=DMARC1'));
-    if (record) dmarc = record;
-  } catch (_) {}
+  // 1. NS check
+  for (const d of domainsToTry) {
+    try {
+      console.log(`[crawler] checkDNS: Resolving NS for ${d}`);
+      let nsRecords = [];
+      try {
+        nsRecords = await dns.resolveNs(d);
+      } catch (e) {
+        console.log(`[crawler] checkDNS NS resolveNs failed for ${d}: ${e.message}, trying resolve('NS')`);
+        try {
+          nsRecords = await dns.resolve(d, 'NS');
+        } catch (_) {}
+      }
+      console.log(`[crawler] checkDNS NS raw records for ${d}:`, nsRecords);
+      if (nsRecords && nsRecords.length > 0) {
+        ns = true;
+        break;
+      }
+    } catch (err) {
+      console.log(`[crawler] checkDNS NS lookup error for ${d}: ${err.message}`);
+    }
+  }
 
-  try {
-    const mxRecords = await dns.resolveMx(domain);
-    mx = mxRecords.length > 0;
-  } catch (_) {}
+  // 2. MX check
+  for (const d of domainsToTry) {
+    try {
+      console.log(`[crawler] checkDNS: Resolving MX for ${d}`);
+      let mxRecords = [];
+      try {
+        mxRecords = await dns.resolveMx(d);
+      } catch (e) {
+        console.log(`[crawler] checkDNS MX resolveMx failed for ${d}: ${e.message}, trying resolve('MX')`);
+        try {
+          mxRecords = await dns.resolve(d, 'MX');
+        } catch (_) {}
+      }
+      console.log(`[crawler] checkDNS MX raw records for ${d}:`, mxRecords);
+      if (mxRecords && mxRecords.length > 0) {
+        mx = true;
+        break;
+      }
+    } catch (err) {
+      console.log(`[crawler] checkDNS MX lookup error for ${d}: ${err.message}`);
+    }
+  }
 
-  try {
-    const nsRecords = await dns.resolveNs(domain);
-    ns = nsRecords.length > 0;
-  } catch (_) {}
+  // 3. SPF check (all TXT records and look for v=spf1)
+  for (const d of domainsToTry) {
+    try {
+      console.log(`[crawler] checkDNS: Resolving TXT for SPF on ${d}`);
+      const txtRecords = await dns.resolveTxt(d);
+      console.log(`[crawler] checkDNS SPF raw TXT records for ${d}:`, txtRecords);
+      const spfRecord = txtRecords.flat().find(r => r.startsWith('v=spf1'));
+      if (spfRecord) {
+        spf = spfRecord;
+        spfPresent = true;
+        break;
+      }
+    } catch (err) {
+      console.log(`[crawler] checkDNS SPF lookup error for ${d}: ${err.message}`);
+    }
+  }
 
-  return { spf, dmarc, mx, ns, error };
+  // 4. DMARC check (_dmarc.domain TXT records)
+  for (const d of domainsToTry) {
+    try {
+      const dmarcDomain = `_dmarc.${d}`;
+      console.log(`[crawler] checkDNS: Resolving TXT for DMARC on ${dmarcDomain}`);
+      try {
+        const txtRecords = await dns.resolveTxt(dmarcDomain);
+        console.log(`[crawler] checkDNS DMARC raw TXT records for ${dmarcDomain}:`, txtRecords);
+        const dmarcRecord = txtRecords.flat().find(r => r.startsWith('v=DMARC1'));
+        if (dmarcRecord) {
+          dmarc = dmarcRecord;
+          dmarcPresent = true;
+          break;
+        }
+      } catch (_) {}
+    } catch (err) {
+      console.log(`[crawler] checkDNS DMARC lookup error for ${d}: ${err.message}`);
+    }
+  }
+
+  return { spf, spfPresent, dmarc, dmarcPresent, mx, ns, error: null };
 }
 
 /**
  * Check for exposed sensitive files (5 second timeout per request)
  */
-async function checkExposedFiles(baseUrl) {
+async function checkExposedFiles(baseUrl, techStack = [], auth = {}) {
   const paths = [
     '/.env',
     '/.git/config',
@@ -189,23 +313,48 @@ async function checkExposedFiles(baseUrl) {
     '/phpinfo.php',
     '/backup.zip',
     '/.htaccess',
-    '/admin',
-    '/robots.txt',
-    '/.well-known/security.txt'
+    '/phpmyadmin',
+    '/admin.php',
+    '/config.php',
+    '/database.sql',
+    '/dump.sql',
+    '/.DS_Store'
   ];
+  
+  // Dynamic scoping based on techStack
+  const filteredPaths = paths.filter(p => {
+    // WordPress specific files
+    if (['/wp-config.php', '/wp-login.php'].includes(p)) {
+      return techStack.includes('WordPress');
+    }
+    // PHP specific files
+    if (['/phpinfo.php', '/phpmyadmin', '/admin.php', '/config.php'].includes(p)) {
+      return techStack.includes('Laravel') || techStack.includes('WordPress') || techStack.includes('PHP');
+    }
+    return true; // Return general config files
+  });
+
   const exposed = [];
   
   try {
     const origin = new URL(baseUrl).origin;
-    await Promise.all(paths.map(async (p) => {
+    if (!await isSafeUrl(origin)) {
+      return [];
+    }
+
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    };
+    if (auth.authHeader) headers['Authorization'] = auth.authHeader;
+    if (auth.authCookie) headers['Cookie'] = auth.authCookie;
+
+    await Promise.all(filteredPaths.map(async (p) => {
       try {
         const res = await axios.get(`${origin}${p}`, {
           timeout: 5000,
           validateStatus: (status) => status === 200,
           maxRedirects: 2,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-          }
+          headers
         });
         if (res.status === 200) {
           exposed.push(p);
@@ -220,11 +369,20 @@ async function checkExposedFiles(baseUrl) {
 /**
  * Test PUT, DELETE, TRACE HTTP methods (5 second timeout)
  */
-async function checkHttpMethods(url) {
+async function checkHttpMethods(url, auth = {}) {
   const methods = ['PUT', 'DELETE', 'TRACE'];
   const results = { put: false, delete: false, trace: false };
 
   try {
+    if (!await isSafeUrl(url)) {
+      return results;
+    }
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    };
+    if (auth.authHeader) headers['Authorization'] = auth.authHeader;
+    if (auth.authCookie) headers['Cookie'] = auth.authCookie;
+
     await Promise.all(methods.map(async (method) => {
       try {
         const res = await axios({
@@ -232,9 +390,7 @@ async function checkHttpMethods(url) {
           method,
           timeout: 5000,
           validateStatus: () => true,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-          }
+          headers
         });
         const status = res.status;
         if (status !== 405 && status !== 501) {
@@ -280,10 +436,10 @@ function checkPort(domain, port) {
  * Scan standard administrative and database ports to check public exposure
  */
 async function portScan(domain) {
-  const ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 1433, 3306, 3389, 5432, 8080];
+  const ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 1433, 3306, 3389, 5432, 6379, 27017, 8080];
   const services = {
     21: { name: 'FTP', dangerous: true },
-    22: { name: 'SSH', dangerous: false },
+    22: { name: 'SSH', dangerous: true },
     23: { name: 'Telnet', dangerous: true },
     25: { name: 'SMTP', dangerous: false },
     53: { name: 'DNS', dangerous: false },
@@ -296,7 +452,9 @@ async function portScan(domain) {
     3306: { name: 'MySQL', dangerous: true },
     3389: { name: 'RDP', dangerous: true },
     5432: { name: 'Postgres', dangerous: true },
-    8080: { name: 'HTTP-Alt', dangerous: false }
+    6379: { name: 'Redis', dangerous: true },
+    27017: { name: 'MongoDB', dangerous: true },
+    8080: { name: 'HTTP-Alt', dangerous: true }
   };
 
   const cleanDomain = (() => {
@@ -309,6 +467,15 @@ async function portScan(domain) {
       return domain;
     }
   })();
+
+  if (!await isSafeUrl(cleanDomain)) {
+    return {
+      scanned: false,
+      openPorts: [],
+      totalScanned: 0,
+      error: 'Blocked by SSRF guard'
+    };
+  }
 
   try {
     const results = await Promise.all(ports.map(port => checkPort(cleanDomain, port)));
@@ -339,7 +506,7 @@ async function portScan(domain) {
 /**
  * Manually trace HTTP redirect chain up to 10 hops
  */
-async function analyzeRedirects(url) {
+async function analyzeRedirects(url, auth = {}) {
   const chain = [];
   let currentUrl = normalizeUrl(url);
   let isCrossDomain = false;
@@ -369,13 +536,21 @@ async function analyzeRedirects(url) {
       }
       seenUrls.add(currentUrl);
 
+      if (!await isSafeUrl(currentUrl)) {
+        break;
+      }
+
+      const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      };
+      if (auth.authHeader) headers['Authorization'] = auth.authHeader;
+      if (auth.authCookie) headers['Cookie'] = auth.authCookie;
+
       const res = await axios.get(currentUrl, {
         maxRedirects: 0,
         validateStatus: () => true,
         timeout: 5000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
+        headers
       });
 
       chain.push({

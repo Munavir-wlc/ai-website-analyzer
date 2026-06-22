@@ -1,5 +1,5 @@
 const cheerio = require('cheerio');
-const { analyzeSecurityWithAI, detectTechnologies } = require('./aiEngine');
+const { analyzeSecurityWithAI, detectTechnologies, auditOutdatedLibraries } = require('./aiEngine');
 const { checkSSL, checkDNS, checkExposedFiles, checkHttpMethods, portScan, analyzeRedirects, whoisLookup, fetchRobotsTxt } = require('./crawler');
 
 async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
@@ -23,6 +23,16 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
     }
   })();
 
+  // Technology Stack Detection (run first for smart tech-scoped audits)
+  const techStack = detectTechnologies(crawlerResult.html || '', crawlerResult.headers || {});
+  const techList = [
+    ...(techStack.cms || []),
+    ...(techStack.framework || []),
+    ...(techStack.server || []),
+    ...(techStack.analytics || []),
+    ...(techStack.libraries || [])
+  ];
+
   // Run checkers step-by-step with real-time feedback
   if (onStep) onStep('ssl_check', 'in_progress');
   const sslData = await checkSSL(crawlerResult.url);
@@ -33,9 +43,14 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
   if (onStep) onStep('dns_check', 'completed');
 
   if (onStep) onStep('file_check', 'in_progress');
+  const authOptions = {
+    authCookie: crawlerResult.authCookie,
+    authHeader: crawlerResult.authHeader
+  };
+
   const [exposedFiles, httpMethods] = await Promise.all([
-    checkExposedFiles(crawlerResult.url),
-    checkHttpMethods(crawlerResult.url)
+    checkExposedFiles(crawlerResult.url, techList, authOptions),
+    checkHttpMethods(crawlerResult.url, authOptions)
   ]);
   if (onStep) onStep('file_check', 'completed');
 
@@ -48,14 +63,14 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
   const [portScanData, whoisData, redirectData, robotsData] = await Promise.all([
     portScan(domain).then(res => { if (onStep) onStep('port_scan', 'completed'); return res; }),
     whoisLookup(domain).then(res => { if (onStep) onStep('whois_check', 'completed'); return res; }),
-    analyzeRedirects(crawlerResult.url).then(res => { if (onStep) onStep('redirect_check', 'completed'); return res; }),
-    fetchRobotsTxt(crawlerResult.url).then(res => { if (onStep) onStep('robots_check', 'completed'); return res; })
+    analyzeRedirects(crawlerResult.url, authOptions).then(res => { if (onStep) onStep('redirect_check', 'completed'); return res; }),
+    fetchRobotsTxt(crawlerResult.url, authOptions).then(res => { if (onStep) onStep('robots_check', 'completed'); return res; })
   ]);
 
-  // Technology Stack Detection
-  const techStack = detectTechnologies(crawlerResult.html || '', crawlerResult.headers || {});
+  // Auditing technology versions for known CVEs
+  const cveFindings = auditOutdatedLibraries(crawlerResult.html || '');
 
-  let findings = [];
+  let findings = [...cveFindings];
   let summary = '';
   let positives = [];
 
@@ -151,10 +166,12 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
     for (const p of portScanData.openPorts) {
       if (p.dangerous) {
         hasDangerous = true;
+        const isHighRisk = [21, 22, 23, 3306, 5432, 6379, 27017].includes(p.port);
+        const severity = isHighRisk ? 'high' : 'medium';
         findings.push({
           id: `open-port-${p.port}`,
-          title: `Dangerous Open Port Exposed: ${p.port} (${p.service})`,
-          severity: 'high',
+          title: `Exposed Service Port: ${p.port} (${p.service})`,
+          severity,
           category: 'Ports',
           description: `Port ${p.port} hosting service ${p.service} is open and publicly accessible. Administrative or database interfaces should not be public.`,
           remediation: `Configure firewall rules (e.g. iptables, security groups) to restrict access to port ${p.port} to trusted IP addresses only or close the service.`,
@@ -248,7 +265,7 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
       findings.push({
         id: 'sensitive-robots-paths',
         title: 'Sensitive Paths Exposed in robots.txt',
-        severity: 'medium',
+        severity: 'low',
         category: 'Robots',
         description: `Paths like: ${robotsData.sensitiveFound.join(', ')} are exposed in robots.txt. Crawlers are instructed not to index them, but malicious actors can use them to find login/admin pages.`,
         remediation: 'Remove administrative or sensitive directory listings from robots.txt. Use proper authorization/access controls to protect these folders instead.',

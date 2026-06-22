@@ -748,7 +748,7 @@ export default function AuditReport({ result }) {
       <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
         <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
           <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
-            <Lock className="h-5 w-5 text-indigo-400" /> Active Service Port Scan (15 Ports Checked)
+            <Lock className="h-5 w-5 text-indigo-400" /> Active Service Port Scan (17 Ports Checked)
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0 space-y-4 text-sm">
@@ -767,25 +767,53 @@ export default function AuditReport({ result }) {
                   <tr className="border-b border-slate-800 text-slate-500 text-xs font-bold uppercase tracking-wider">
                     <th className="py-2.5 px-2">Port Number</th>
                     <th className="py-2.5 px-2">Common Service</th>
+                    <th className="py-2.5 px-2">Description / Context</th>
                     <th className="py-2.5 px-2">Security Exposure Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-semibold">
-                  {portScan.openPorts.map((p, idx) => (
-                    <tr key={idx} className="hover:bg-slate-950/10">
-                      <td className="py-3 px-2 text-slate-200 font-mono text-sm">{p.port}</td>
-                      <td className="py-3 px-2 text-slate-350">{p.service}</td>
-                      <td className="py-3 px-2">
-                        <span className={`inline-flex px-2 py-0.5 text-[10px] font-extrabold uppercase rounded border ${
-                          p.dangerous 
-                            ? 'bg-red-500/10 text-red-400 border-red-500/20' 
-                            : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                        }`}>
-                          {p.dangerous ? 'Dangerous Exposure' : 'Open / Public'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {portScan.openPorts.map((p, idx) => {
+                    const isHighCritical = [21, 22, 23, 3306, 5432, 6379, 27017].includes(p.port);
+                    
+                    let explanation = '';
+                    if (p.port === 8080) {
+                      explanation = 'Alternative HTTP - verify if intentionally public';
+                    } else if (p.port === 22) {
+                      explanation = 'SSH - should not be publicly exposed';
+                    } else if (p.port === 3306) {
+                      explanation = 'MySQL - critical exposure';
+                    } else if (isHighCritical) {
+                      explanation = `${p.service} service - critical administrative or database exposure`;
+                    } else if (p.dangerous) {
+                      explanation = `${p.service} service - administrative or internal protocol exposed`;
+                    }
+
+                    let badgeText = 'Open / Public';
+                    let badgeStyle = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                    
+                    if (p.dangerous) {
+                      if (isHighCritical) {
+                        badgeText = 'Critical Exposure';
+                        badgeStyle = 'bg-red-500/10 text-red-400 border-red-500/20';
+                      } else {
+                        badgeText = 'Medium Exposure';
+                        badgeStyle = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+                      }
+                    }
+
+                    return (
+                      <tr key={idx} className="hover:bg-slate-950/10">
+                        <td className="py-3 px-2 text-slate-200 font-mono text-sm">{p.port}</td>
+                        <td className="py-3 px-2 text-slate-350">{p.service}</td>
+                        <td className="py-3 px-2 text-slate-400 text-xs italic">{explanation || 'Standard public service'}</td>
+                        <td className="py-3 px-2">
+                          <span className={`inline-flex px-2 py-0.5 text-[10px] font-extrabold uppercase rounded border ${badgeStyle}`}>
+                            {badgeText}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

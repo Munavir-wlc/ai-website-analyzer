@@ -12,7 +12,7 @@ router.get('/', async (req, res) => {
   
   try {
     // Validate URL parameter
-    const { url } = req.query;
+    const { url, authCookie, authHeader } = req.query;
     if (!url) {
       return res.status(400).json({
         success: false,
@@ -44,7 +44,7 @@ router.get('/', async (req, res) => {
     console.log(`[Screenshot] Requesting: ${normalizedUrl}`);
 
     // Capture screenshots
-    const { desktop, mobile } = await screenshotService.captureScreenshots(normalizedUrl);
+    const { desktop, mobile } = await screenshotService.captureScreenshots(normalizedUrl, { authCookie, authHeader });
 
     const captureTime = Date.now() - startTime;
 

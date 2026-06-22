@@ -461,4 +461,116 @@ Format:
   }
 }
 
-module.exports = { generateRecommendations, analyzeSecurityWithAI, detectTechnologies };
+function semverCompare(v1, v2) {
+  const p1 = v1.split('.').map(Number);
+  const p2 = v2.split('.').map(Number);
+  for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+    const n1 = p1[i] || 0;
+    const n2 = p2[i] || 0;
+    if (n1 < n2) return -1;
+    if (n1 > n2) return 1;
+  }
+  return 0;
+}
+
+const KNOWN_CVES = {
+  jquery: [
+    {
+      maxVersion: '3.5.0',
+      id: 'CVE-2020-11022',
+      title: 'jQuery < 3.5.0 Cross-Site Scripting (XSS) Vulnerability',
+      description: 'jQuery versions prior to 3.5.0 are vulnerable to Cross-Site Scripting (XSS) when passing HTML to DOM manipulation methods like .html() or .append().',
+      remediation: 'Upgrade jQuery to version 3.5.0 or higher.',
+      severity: 'medium',
+      owasp: 'A06:2021-Vulnerable and Outdated Components'
+    }
+  ],
+  bootstrap: [
+    {
+      maxVersion: '3.4.1',
+      id: 'CVE-2019-8331',
+      title: 'Bootstrap < 3.4.1 XSS Vulnerability in Tooltips/Popovers',
+      description: 'Bootstrap versions prior to 3.4.1 are vulnerable to Cross-Site Scripting (XSS) due to insufficient sanitization in the tooltip and popover plugins.',
+      remediation: 'Upgrade Bootstrap to version 3.4.1 or higher.',
+      severity: 'medium',
+      owasp: 'A06:2021-Vulnerable and Outdated Components'
+    }
+  ],
+  wordpress: [
+    {
+      maxVersion: '6.2.0',
+      id: 'CVE-2023-32243',
+      title: 'WordPress Core < 6.2.1 Directory Traversal & RCE Risks',
+      description: 'WordPress Core versions prior to 6.2.1 are prone to vulnerabilities including Directory Traversal and Cross-Site Request Forgery.',
+      remediation: 'Upgrade WordPress installation to the latest security release.',
+      severity: 'high',
+      owasp: 'A06:2021-Vulnerable and Outdated Components'
+    }
+  ]
+};
+
+function auditOutdatedLibraries(html) {
+  const findings = [];
+  if (!html) return findings;
+
+  // Extract jQuery version
+  const jqueryMatch = html.match(/jquery[-.]([0-9]+\.[0-9]+\.[0-9]+)/i) || html.match(/jquery\.min\.js\?ver=([0-9]+\.[0-9]+\.[0-9]+)/i);
+  if (jqueryMatch) {
+    const version = jqueryMatch[1];
+    for (const vuln of KNOWN_CVES.jquery) {
+      if (semverCompare(version, vuln.maxVersion) <= 0) {
+        findings.push({
+          id: `${vuln.id}-jquery`,
+          title: vuln.title,
+          severity: vuln.severity,
+          category: 'Scripts',
+          description: vuln.description + ` (Detected version: ${version})`,
+          remediation: vuln.remediation,
+          owasp: vuln.owasp
+        });
+      }
+    }
+  }
+
+  // Extract Bootstrap version
+  const bootstrapMatch = html.match(/bootstrap\/([0-9]+\.[0-9]+\.[0-9]+)/i) || html.match(/bootstrap[-.]([0-9]+\.[0-9]+\.[0-9]+)/i);
+  if (bootstrapMatch) {
+    const version = bootstrapMatch[1];
+    for (const vuln of KNOWN_CVES.bootstrap) {
+      if (semverCompare(version, vuln.maxVersion) <= 0) {
+        findings.push({
+          id: `${vuln.id}-bootstrap`,
+          title: vuln.title,
+          severity: vuln.severity,
+          category: 'Scripts',
+          description: vuln.description + ` (Detected version: ${version})`,
+          remediation: vuln.remediation,
+          owasp: vuln.owasp
+        });
+      }
+    }
+  }
+
+  // Extract WordPress version
+  const wpMatch = html.match(/wp-emoji-release\.min\.js\?ver=([0-9]+\.[0-9]+\.[0-9]+)/i) || html.match(/generator" content="WordPress ([0-9]+\.[0-9]+\.[0-9]+)/i);
+  if (wpMatch) {
+    const version = wpMatch[1];
+    for (const vuln of KNOWN_CVES.wordpress) {
+      if (semverCompare(version, vuln.maxVersion) <= 0) {
+        findings.push({
+          id: `${vuln.id}-wordpress`,
+          title: vuln.title,
+          severity: vuln.severity,
+          category: 'Scripts',
+          description: vuln.description + ` (Detected version: ${version})`,
+          remediation: vuln.remediation,
+          owasp: vuln.owasp
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+
+module.exports = { generateRecommendations, analyzeSecurityWithAI, detectTechnologies, auditOutdatedLibraries };

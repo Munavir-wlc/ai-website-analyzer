@@ -11,6 +11,7 @@
  */
 
 const { launchBrowser } = require('../utils/browserLaunch');
+const { isSafeUrl } = require('../utils/ssrfGuard');
 
 // Timeout configurations (in milliseconds)
 const TIMEOUTS = {
@@ -169,7 +170,10 @@ async function scrollToLoadLazyContent(page) {
 /**
  * Main screenshot capture function
  */
-async function captureScreenshots(url) {
+async function captureScreenshots(url, authOptions = {}) {
+  if (!await isSafeUrl(url)) {
+    throw new Error(`Blocked by SSRF guard: ${url}`);
+  }
   let browser;
   
   try {
@@ -186,6 +190,31 @@ async function captureScreenshots(url) {
     const page = await browser.newPage();
     page.setDefaultNavigationTimeout(TIMEOUTS.NAVIGATION);
     page.setDefaultTimeout(TIMEOUTS.NAVIGATION);
+
+    // Apply authorization details if passed
+    const { authCookie, authHeader } = authOptions;
+    if (authHeader) {
+      await page.setExtraHTTPHeaders({
+        'Authorization': authHeader
+      });
+    }
+    if (authCookie) {
+      const cookieParts = authCookie.split(';');
+      for (const part of cookieParts) {
+        const eqIdx = part.indexOf('=');
+        if (eqIdx !== -1) {
+          const name = part.substring(0, eqIdx).trim();
+          const value = part.substring(eqIdx + 1).trim();
+          try {
+            await page.setCookie({
+              name,
+              value,
+              domain: new URL(url).hostname
+            });
+          } catch (_) {}
+        }
+      }
+    }
 
     try {
       // === DESKTOP CAPTURE ===
