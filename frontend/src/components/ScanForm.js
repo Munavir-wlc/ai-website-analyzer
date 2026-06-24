@@ -17,6 +17,7 @@ export default function ScanForm() {
   const [currentStepId, setCurrentStepId] = useState(null);
   const [authCookie, setAuthCookie] = useState('');
   const [authHeader, setAuthHeader] = useState('');
+  const [delay, setDelay] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [stepStates, setStepStates] = useState({
     crawling: 'pending',
@@ -77,7 +78,8 @@ export default function ScanForm() {
             mode,
             socketId: socket.id,
             authCookie: authCookie.trim(),
-            authHeader: authHeader.trim()
+            authHeader: authHeader.trim(),
+            delay
           }),
         });
         
@@ -350,6 +352,24 @@ export default function ScanForm() {
               />
               <p className="text-[10px] text-slate-500 mt-1">
                 Custom Authorization or token header injected into every outbound request.
+              </p>
+            </div>
+            <div>
+              <label htmlFor="delay" className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                Scan Rate Throttling: {delay} ms
+              </label>
+              <input
+                id="delay"
+                type="range"
+                min="0"
+                max="2000"
+                step="100"
+                value={delay}
+                onChange={(e) => setDelay(parseInt(e.target.value, 10))}
+                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">
+                Introduces a request delay between active form inputs probes. Higher values reduce target server load and bypass active rate-limit blocklists.
               </p>
             </div>
           </div>

@@ -48,6 +48,9 @@ function isPrivateIPv6(ip) {
  * @returns {Promise<boolean>} True if target resolves only to public, safe IPs, otherwise False
  */
 async function isSafeUrl(targetUrlOrHost) {
+  if (process.env.ALLOW_LOCAL_SCANS === 'true') {
+    return true;
+  }
   try {
     let host = targetUrlOrHost.trim();
     

@@ -21,7 +21,7 @@ function scoreToGrade(score) {
   return 'F';
 }
 
-function generateReport({ securityResult, url, scanDuration }) {
+function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled }) {
   const report = {
     url,
     domain: null,
@@ -31,6 +31,8 @@ function generateReport({ securityResult, url, scanDuration }) {
     overallGrade: 'F',
     generatedAt: new Date().toISOString(),
     scanDuration: scanDuration || 0,
+    scanMode: scanMode || 'full',
+    aiEnabled: !!aiEnabled,
     summary: '',
     positives: [],
     findings: [],
@@ -59,6 +61,9 @@ function generateReport({ securityResult, url, scanDuration }) {
     whoisData: { exists: false, registrar: 'Unknown', createdDate: null, expiryDate: null, daysRemaining: null },
     redirectData: { chain: [], redirectCount: 0, enforcesHttps: false, finalUrl: '', isCrossDomain: false },
     robotsData: { exists: false, paths: [], sensitiveFound: [], raw: '' },
+    wafData: { detected: false, name: null, confidence: 'low', source: null },
+    apiDiscoveryData: { scanned: false, swaggerDocs: [], apiRoutes: [], totalDiscovered: 0 },
+    headersGrade: { score: 0, grade: 'F', breakdown: {} },
     riskBreakdown: { critical: 0, high: 0, medium: 0, low: 0 },
     topPriority: [],
     complianceFlags: { gdpr: false, pci: false, hipaa: false }
@@ -112,6 +117,9 @@ function generateReport({ securityResult, url, scanDuration }) {
     report.whoisData = securityResult.whoisData || report.whoisData;
     report.redirectData = securityResult.redirectData || report.redirectData;
     report.robotsData = securityResult.robotsData || report.robotsData;
+    report.wafData = securityResult.wafData || report.wafData;
+    report.apiDiscoveryData = securityResult.apiDiscoveryData || report.apiDiscoveryData;
+    report.headersGrade = securityResult.headersGrade || report.headersGrade;
 
     // Parse SSL details
     if (securityResult.sslData) {

@@ -11,6 +11,7 @@ import { ArrowLeft, RefreshCw } from 'lucide-react';
 export default function ResultsPage() {
   const [result, setResult] = useState(null);
   const [hasChecked, setHasChecked] = useState(false);
+  const [screenshots, setScreenshots] = useState({ loading: false, desktop: null, mobile: null, error: null });
 
   useEffect(() => {
     try {
@@ -22,6 +23,57 @@ export default function ResultsPage() {
     }
     setHasChecked(true);
   }, []);
+
+  useEffect(() => {
+    if (result && (result.scannedUrl || result.url)) {
+      const targetUrl = result.scannedUrl || result.url;
+      setScreenshots({ loading: true, desktop: null, mobile: null, error: null });
+      
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      const authCookie = result.authCookie || '';
+      const authHeader = result.authHeader || '';
+      
+      const queryParams = new URLSearchParams({
+        url: targetUrl,
+        authCookie,
+        authHeader
+      }).toString();
+
+      fetch(`${API_URL}/api/screenshot?${queryParams}`)
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error(`Screenshot service returned status ${res.status}`);
+          }
+          return res.json();
+        })
+        .then((data) => {
+          if (data.success) {
+            setScreenshots({
+              loading: false,
+              desktop: data.desktop,
+              mobile: data.mobile,
+              error: null
+            });
+          } else {
+            setScreenshots({
+              loading: false,
+              desktop: null,
+              mobile: null,
+              error: data.error || 'Failed to capture screenshots'
+            });
+          }
+        })
+        .catch((err) => {
+          console.error('[Screenshot Fetch Error]:', err);
+          setScreenshots({
+            loading: false,
+            desktop: null,
+            mobile: null,
+            error: err.message || 'Failed to fetch page screenshots'
+          });
+        });
+    }
+  }, [result]);
 
   if (!hasChecked) {
     return (
@@ -63,13 +115,13 @@ export default function ResultsPage() {
         <div className="max-w-7xl mx-auto">
           <div className="mb-6 flex justify-between items-center print:hidden">
             <Link
-              href="/"
-              className="text-sm font-semibold text-slate-400 hover:text-white inline-flex items-center gap-1.5 transition-colors"
+               href="/"
+               className="text-sm font-semibold text-slate-400 hover:text-white inline-flex items-center gap-1.5 transition-colors"
             >
               <ArrowLeft className="h-4 w-4" /> Start New Scan
             </Link>
           </div>
-          <AuditReport result={result} />
+          <AuditReport result={result} screenshots={screenshots} />
         </div>
       </main>
       <Footer />

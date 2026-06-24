@@ -19,5 +19,8 @@
     "socket.io": "^4.8.3",
     "ssl-checker": "^3.0.1",
     "whoiser": "^2.0.0-beta.10"
+  },
+  "engines": {
+    "node": ">=18.0.0 <25.0.0"
   }
 }

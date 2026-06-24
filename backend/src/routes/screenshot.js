@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const screenshotService = require('../services/screenshotService');
+const { isSafeUrl } = require('../utils/ssrfGuard');
 
 /**
  * Screenshot API Route
@@ -26,6 +27,17 @@ router.get('/', async (req, res) => {
     let normalizedUrl = url.trim();
     if (!/^https?:\/\//i.test(normalizedUrl)) {
       normalizedUrl = 'https://' + normalizedUrl;
+    }
+
+    // Validate hostname resolving target to block private IPs
+    if (!await isSafeUrl(normalizedUrl)) {
+      return res.status(400).json({
+        success: false,
+        error: 'URL blocked: Private, local, or loopback network addresses are not permitted.',
+        url: normalizedUrl,
+        desktop: null,
+        mobile: null,
+      });
     }
 
     // Validate URL format

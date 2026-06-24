@@ -17,7 +17,7 @@ async function generateRecommendations(report) {
     const response = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -117,136 +117,10 @@ function detectTechnologies(html, headers) {
  * Fallback static audits if OpenAI is unavailable (quota, timeout, API failures)
  */
 function runFallbackStaticChecks(url, headers, html, sslData, dnsData, exposedFiles, httpMethods) {
-  const findings = [];
-  const positives = [];
-  const normHeaders = {};
-  for (const [k, v] of Object.entries(headers || {})) {
-    normHeaders[k.toLowerCase()] = v;
-  }
-
-  // 1. HTTPS Check
-  const isHttps = url.startsWith('https://');
-  if (!isHttps) {
-    findings.push({
-      id: 'insecure-http-fallback',
-      title: 'Insecure HTTP Transport',
-      severity: 'high',
-      category: 'SSL',
-      description: 'The site is loaded over unencrypted HTTP, exposing user traffic to eavesdropping.',
-      remediation: 'Configure an SSL/TLS certificate and redirect HTTP traffic to HTTPS.',
-      owasp: 'A05:2021 Security Misconfiguration'
-    });
-  } else {
-    positives.push('Site is served over secure HTTPS.');
-  }
-
-  // 2. Security Headers Check
-  const headerChecks = {
-    'content-security-policy': { name: 'Content-Security-Policy', severity: 'high', desc: 'Prevents XSS attacks.', rem: 'Add the Content-Security-Policy header.' },
-    'strict-transport-security': { name: 'Strict-Transport-Security', severity: 'medium', desc: 'Enforces HTTPS.', rem: 'Add the Strict-Transport-Security header.' },
-    'x-frame-options': { name: 'X-Frame-Options', severity: 'medium', desc: 'Prevents clickjacking.', rem: 'Add X-Frame-Options: SAMEORIGIN.' },
-    'x-content-type-options': { name: 'X-Content-Type-Options', severity: 'medium', desc: 'Prevents MIME-sniffing.', rem: 'Add X-Content-Type-Options: nosniff.' },
-    'referrer-policy': { name: 'Referrer-Policy', severity: 'low', desc: 'Controls referrer data.', rem: 'Add Referrer-Policy header.' },
-    'permissions-policy': { name: 'Permissions-Policy', severity: 'low', desc: 'Controls browser features.', rem: 'Add Permissions-Policy header.' }
-  };
-
-  for (const [hKey, meta] of Object.entries(headerChecks)) {
-    if (!normHeaders[hKey]) {
-      findings.push({
-        id: `missing-${hKey}-fallback`,
-        title: `Missing ${meta.name} Header`,
-        severity: meta.severity,
-        category: 'Headers',
-        description: `The response does not send the ${meta.name} security header, which ${meta.desc.toLowerCase()}`,
-        remediation: meta.rem,
-        owasp: 'A05:2021 Security Misconfiguration'
-      });
-    } else {
-      positives.push(`Defensive header ${meta.name} is present.`);
-    }
-  }
-
-  // 3. Cookie Flags Check
-  const setCookie = normHeaders['set-cookie'];
-  if (setCookie) {
-    const cookies = Array.isArray(setCookie) ? setCookie : [setCookie];
-    let httpOnlyMissing = false;
-    let secureMissing = false;
-    
-    for (const cookie of cookies) {
-      if (!/;\s*HttpOnly/i.test(cookie)) httpOnlyMissing = true;
-      if (!/;\s*Secure/i.test(cookie)) secureMissing = true;
-    }
-
-    if (httpOnlyMissing) {
-      findings.push({
-        id: 'cookie-httponly-missing-fallback',
-        title: 'Cookie Missing HttpOnly Flag',
-        severity: 'medium',
-        category: 'Cookies',
-        description: 'One or more set cookies do not enforce HttpOnly, allowing script access (prone to token theft via XSS).',
-        remediation: 'Configure the HttpOnly flag on all cookies set by the application.',
-        owasp: 'A05:2021 Security Misconfiguration'
-      });
-    }
-    if (secureMissing) {
-      findings.push({
-        id: 'cookie-secure-missing-fallback',
-        title: 'Cookie Missing Secure Flag',
-        severity: 'medium',
-        category: 'Cookies',
-        description: 'One or more set cookies do not enforce the Secure flag, allowing cookies to be sent over clear HTTP.',
-        remediation: 'Configure the Secure flag on all set cookies (requires HTTPS).',
-        owasp: 'A05:2021 Security Misconfiguration'
-      });
-    }
-    if (!httpOnlyMissing && !secureMissing) {
-      positives.push('Application cookies enforce HttpOnly and Secure properties.');
-    }
-  }
-
-  // 4. Exposed Files
-  if (exposedFiles && exposedFiles.length > 0) {
-    findings.push({
-      id: 'exposed-files-fallback',
-      title: 'Exposed Sensitive Files',
-      severity: 'critical',
-      category: 'Scripts',
-      description: `Publicly accessible sensitive paths: ${exposedFiles.join(', ')}`,
-      remediation: 'Restrict access using web server controls or move these files out of the web root.',
-      owasp: 'A05:2021 Security Misconfiguration'
-    });
-  }
-
-  // 5. SSL / DNS checks
-  if (sslData && !sslData.valid && isHttps) {
-    findings.push({
-      id: 'ssl-invalid-fallback',
-      title: 'Insecure SSL Certificate',
-      severity: 'critical',
-      category: 'SSL',
-      description: `The certificate is invalid or has expired: ${sslData.error || 'untrusted'}`,
-      remediation: 'Verify certificate renewal and chain installation.',
-      owasp: 'A05:2021 Security Misconfiguration'
-    });
-  }
-
-  if (dnsData && !dnsData.spfPresent && !dnsData.spf) {
-    findings.push({
-      id: 'dns-spf-missing-fallback',
-      title: 'Missing SPF Record',
-      severity: 'low',
-      category: 'DNS',
-      description: 'The DNS does not advertise an SPF rule, increasing email spoofing vulnerability.',
-      remediation: 'Publish an SPF TXT record for this domain.',
-      owasp: 'A05:2021 Security Misconfiguration'
-    });
-  }
-
   return {
-    findings,
-    summary: 'AI analysis temporarily unavailable. Showing static security checks only.',
-    positives
+    findings: [],
+    summary: 'AI analysis temporarily offline. Detailed security header grader and active scanner results compiled successfully.',
+    positives: []
   };
 }
 

@@ -14,13 +14,14 @@ router.post('/', async (req, res) => {
   const scanId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
   
   try {
-    let { url, consent, mode, socketId, authCookie, authHeader } = req.body;
+    let { url, consent, mode, socketId, authCookie, authHeader, delay } = req.body;
     if (!url) {
       return res.status(400).json({ error: 'url is required' });
     }
 
     const hasConsent = !!consent;
     const scanMode = mode || 'full'; // 'quick' or 'full'
+    const throttleDelay = parseInt(delay, 10) || 0;
 
     // Normalize URL
     const normalizedUrl = crawler.normalizeUrl(url);
@@ -164,7 +165,7 @@ router.post('/', async (req, res) => {
       emitStep('file_check', 'in_progress', { message: 'Probing input forms for SQLi and XSS...' });
       try {
         console.log(`[scan] [${scanId}] Initiating active forms probing`);
-        const activeFindings = await auditActiveVulnerabilities(crawlerResult.html, crawlerResult.url, { authCookie, authHeader });
+        const activeFindings = await auditActiveVulnerabilities(crawlerResult.html, crawlerResult.url, { authCookie, authHeader }, throttleDelay);
         if (activeFindings && activeFindings.length > 0) {
           for (const af of activeFindings) {
             if (!securityResult.findings.some(f => f.id === af.id)) {
@@ -184,7 +185,9 @@ router.post('/', async (req, res) => {
     const report = reportGenerator.generateReport({
       securityResult,
       url: crawlerResult.url,
-      scanDuration
+      scanDuration,
+      scanMode,
+      aiEnabled: runAi
     });
 
     // Send completed event to WebSocket if exists
@@ -213,7 +216,12 @@ router.post('/', async (req, res) => {
       portScanData: report.portScanData,
       whoisData: report.whoisData,
       redirectData: report.redirectData,
-      robotsData: report.robotsData
+      robotsData: report.robotsData,
+      scanMode: report.scanMode,
+      aiEnabled: report.aiEnabled,
+      wafData: report.wafData,
+      apiDiscoveryData: report.apiDiscoveryData,
+      headersGrade: report.headersGrade
     });
   } catch (err) {
     console.error('Scan error:', err);

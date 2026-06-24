@@ -6,7 +6,8 @@ import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
 import { 
   Shield, CheckCircle, AlertTriangle, FileText, Download, Clock, 
-  Settings, Globe, Lock, ShieldAlert, Cpu, Database, Eye, Info
+  Settings, Globe, Lock, ShieldAlert, Cpu, Database, Eye, Info,
+  Loader2, Monitor, Smartphone
 } from 'lucide-react';
 
 function GradeGauge({ grade, score, size = 'md', color }) {
@@ -42,7 +43,7 @@ function GradeGauge({ grade, score, size = 'md', color }) {
   );
 }
 
-export default function AuditReport({ result }) {
+export default function AuditReport({ result, screenshots }) {
   const [activeSeverityFilter, setActiveSeverityFilter] = useState('all');
 
   const domain = (() => {
@@ -92,6 +93,8 @@ export default function AuditReport({ result }) {
   const whois = result.whoisData || { exists: false, registrar: 'Unknown', createdDate: null, expiryDate: null, daysRemaining: null };
   const redirects = result.redirectData || { chain: [], redirectCount: 0, enforcesHttps: false, finalUrl: '', isCrossDomain: false };
   const robots = result.robotsData || { exists: false, paths: [], sensitiveFound: [], raw: '' };
+  const waf = result.wafData || { detected: false, name: null, confidence: 'low', source: null };
+  const apiDocs = result.apiDiscoveryData || { scanned: false, swaggerDocs: [], apiRoutes: [], totalDiscovered: 0 };
 
   const sslDaysColor = ssl.daysRemaining > 60 
     ? 'text-emerald-400' 
@@ -191,7 +194,7 @@ export default function AuditReport({ result }) {
             </p>
             
             {/* Meta stats grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-semibold uppercase tracking-wide text-slate-400 pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-xs font-semibold uppercase tracking-wide text-slate-400 pt-2">
               <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
                 <span className="block text-[10px] text-slate-500 mb-0.5">Scanned Date</span>
                 <span className="text-white text-[11px] normal-case">{new Date(result.scanDate || result.generatedAt).toLocaleDateString()}</span>
@@ -199,6 +202,10 @@ export default function AuditReport({ result }) {
               <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
                 <span className="block text-[10px] text-slate-500 mb-0.5">Scan Duration</span>
                 <span className="text-white text-[11px] normal-case">{result.scanDuration || '0.1'}s</span>
+              </div>
+              <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
+                <span className="block text-[10px] text-slate-500 mb-0.5">Scan Depth</span>
+                <span className="text-white text-[11px] normal-case">{result.scanMode === 'quick' ? 'Quick (Passive)' : 'Full (Active/AI)'}</span>
               </div>
               <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
                 <span className="block text-[10px] text-slate-500 mb-0.5">Compliance</span>
@@ -255,12 +262,12 @@ export default function AuditReport({ result }) {
       )}
 
       {/* Compliance Risk Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {/* GDPR */}
         <div className="border border-slate-800 rounded-2xl bg-slate-900/60 p-5 shadow-md flex flex-col justify-between">
           <div>
             <h4 className="font-extrabold text-white text-base">GDPR Compliance</h4>
-            <p className="text-xs text-slate-400 mt-1">Requires HTTPS connections, SSL cert trust, secure cookie structures, and strict data leakage prevention.</p>
+            <p className="text-xs text-slate-400 mt-1">Requires HTTPS connections, SSL cert trust, secure cookie structures, and data leakage controls.</p>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
             <span className="text-xs text-slate-500 font-bold">Audit Status</span>
@@ -309,7 +316,97 @@ export default function AuditReport({ result }) {
             </span>
           </div>
         </div>
+
+        {/* WAF Shield */}
+        <div className="border border-slate-800 rounded-2xl bg-slate-900/60 p-5 shadow-md flex flex-col justify-between">
+          <div>
+            <h4 className="font-extrabold text-white text-base">WAF Firewall Shield</h4>
+            <p className="text-xs text-slate-400 mt-1">
+              Checks if the application is fronted by active firewalls (e.g. Cloudflare, AWS WAF) which filter malicious probes.
+            </p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+            <span className="text-xs text-slate-500 font-bold">Detection Status</span>
+            <span className={`text-xs font-bold uppercase px-3 py-1 rounded-full ${
+              waf.detected 
+                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+            }`}>
+              {waf.detected ? `${waf.name || 'Firewall'} Active` : 'No WAF Found'}
+            </span>
+          </div>
+        </div>
       </div>
+
+      {/* HTTP Security Headers Grader Card */}
+      {result.headersGrade && result.headersGrade.breakdown && Object.keys(result.headersGrade.breakdown).length > 0 && (
+        <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+          <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6 flex flex-row items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-indigo-400" /> HTTP Security Headers Grade
+            </CardTitle>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500 font-bold uppercase tracking-wider font-mono">Score: {result.headersGrade.score}/100</span>
+              <span className={`text-base font-extrabold px-3 py-1 rounded-lg ${
+                result.headersGrade.grade.startsWith('A')
+                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  : result.headersGrade.grade.startsWith('B')
+                    ? 'bg-lime-500/10 text-lime-400 border border-lime-500/20'
+                    : result.headersGrade.grade.startsWith('C')
+                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                      : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+              }`}>
+                Grade {result.headersGrade.grade}
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <p className="text-sm text-slate-400 leading-relaxed mb-4">
+              Security headers instruct client web browsers on safety constraints, restricting unauthorized frames, script sources, and cookie transport layers.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-850 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                    <th className="py-2.5">Header</th>
+                    <th className="py-2.5">Status</th>
+                    <th className="py-2.5 hidden md:table-cell">Value</th>
+                    <th className="py-2.5">Diagnostic Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/40 text-xs">
+                  {Object.entries(result.headersGrade.breakdown).map(([name, data]) => {
+                    const statusColors = {
+                      secure: 'text-emerald-400 bg-emerald-500/5 border border-emerald-500/10',
+                      weak: 'text-amber-400 bg-amber-500/5 border border-amber-500/10',
+                      missing: 'text-rose-400 bg-rose-500/5 border border-rose-500/10'
+                    };
+                    const statusLabels = {
+                      secure: 'Secure',
+                      weak: 'Weak Config',
+                      missing: 'Missing'
+                    };
+                    return (
+                      <tr key={name} className="hover:bg-slate-950/20 transition-all">
+                        <td className="py-3 font-semibold text-slate-200">{name}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${statusColors[data.status] || 'text-slate-400 bg-slate-800/10'}`}>
+                            {statusLabels[data.status] || data.status}
+                          </span>
+                        </td>
+                        <td className="py-3 hidden md:table-cell max-w-[200px] truncate font-mono text-[10px] text-slate-400" title={data.value || 'N/A'}>
+                          {data.value || '—'}
+                        </td>
+                        <td className="py-3 text-slate-300 leading-normal">{data.desc}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Technology Stack Detection */}
       {techStack && Object.values(techStack).some(arr => arr && arr.length > 0) && (
@@ -360,6 +457,153 @@ export default function AuditReport({ result }) {
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Visual Page Preview */}
+      {screenshots && (screenshots.desktop || screenshots.mobile || screenshots.loading || screenshots.error) && (
+        <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl print:hidden">
+          <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+            <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+              <Eye className="h-5 w-5 text-indigo-400" /> Visual Page Preview
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {screenshots.loading ? (
+              <div className="py-12 flex flex-col items-center justify-center space-y-3 text-indigo-400">
+                <Loader2 className="h-8 w-8 animate-spin" />
+                <span className="text-sm font-semibold">Capturing desktop and mobile viewports...</span>
+              </div>
+            ) : screenshots.error ? (
+              <div className="py-8 text-center text-slate-500">
+                <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-2" />
+                <p className="text-sm text-slate-400 font-semibold">Screenshot Capture Suspended</p>
+                <p className="text-xs text-slate-500 mt-1">{screenshots.error}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Desktop Viewport Mockup */}
+                {screenshots.desktop && (
+                  <div className="lg:col-span-2 space-y-3">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      <span className="flex items-center gap-1.5"><Monitor className="h-4 w-4 text-indigo-400" /> Desktop View (1024x640)</span>
+                    </div>
+                    <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950/60 flex flex-col shadow-inner">
+                      {/* Browser address bar */}
+                      <div className="bg-slate-900 px-4 py-2 border-b border-slate-800 flex items-center gap-2">
+                        <div className="flex gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-slate-800" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-slate-800" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-slate-800" />
+                        </div>
+                        <div className="flex-1 bg-slate-950 text-slate-500 text-[10px] py-0.5 px-3 rounded-md font-mono truncate text-center">
+                          {domain}
+                        </div>
+                      </div>
+                      {/* Viewport Frame */}
+                      <div className="relative aspect-[16/10] overflow-y-auto max-h-[360px] bg-slate-950">
+                        <img 
+                          src={screenshots.desktop} 
+                          alt="Desktop Viewport" 
+                          className="w-full object-cover object-top"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Mobile Viewport Mockup */}
+                {screenshots.mobile && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      <span className="flex items-center gap-1.5"><Smartphone className="h-4 w-4 text-indigo-400" /> Mobile View (375x667)</span>
+                    </div>
+                    <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950/60 flex flex-col shadow-inner max-w-[280px] mx-auto lg:max-w-none">
+                      {/* Browser address bar */}
+                      <div className="bg-slate-900 px-4 py-2 border-b border-slate-800 flex items-center gap-2">
+                        <div className="flex gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-slate-800" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-slate-800" />
+                        </div>
+                        <div className="flex-1 bg-slate-950 text-slate-500 text-[10px] py-0.5 px-3 rounded-md font-mono truncate text-center">
+                          {domain}
+                        </div>
+                      </div>
+                      {/* Viewport Frame */}
+                      <div className="relative aspect-[375/667] overflow-y-auto max-h-[360px] bg-slate-950">
+                        <img 
+                          src={screenshots.mobile} 
+                          alt="Mobile Viewport" 
+                          className="w-full object-cover object-top"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* API Documentation & Route Discovery */}
+      {apiDocs && apiDocs.scanned && (
+        <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+          <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+            <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+              <Globe className="h-5 w-5 text-indigo-400" /> API Specification & Route Discovery
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-sm">
+              {/* Swagger Specs Probed */}
+              <div className="space-y-3">
+                <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">
+                  API Documentation specifications found ({apiDocs.swaggerDocs?.length || 0})
+                </span>
+                {apiDocs.swaggerDocs && apiDocs.swaggerDocs.length === 0 ? (
+                  <div className="text-slate-400 text-xs italic py-2">
+                    No exposed Swagger or OpenAPI files detected at standard endpoints.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {apiDocs.swaggerDocs.map((doc, idx) => (
+                      <div key={idx} className="bg-slate-950/60 border border-slate-800/80 p-3 rounded-xl flex items-center justify-between gap-3">
+                        <div>
+                          <strong className="block text-slate-200 text-xs font-bold truncate">{doc.name}</strong>
+                          <span className="text-[10px] text-indigo-400 block font-mono font-semibold truncate mt-0.5">{doc.url}</span>
+                        </div>
+                        <Badge className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] uppercase tracking-wide shrink-0">
+                          {doc.type}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* API Routes Discovered */}
+              <div className="space-y-3">
+                <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">
+                  Discovered Backend Routes from Scripts ({apiDocs.apiRoutes?.length || 0})
+                </span>
+                {apiDocs.apiRoutes && apiDocs.apiRoutes.length === 0 ? (
+                  <div className="text-slate-400 text-xs italic py-2">
+                    No backend API route patterns extracted from bundle scripts.
+                  </div>
+                ) : (
+                  <div className="max-h-52 overflow-y-auto bg-slate-950/40 border border-slate-800 p-3.5 rounded-xl font-mono text-xs text-slate-350 space-y-2">
+                    {apiDocs.apiRoutes.map((route, idx) => (
+                      <div key={idx} className="flex items-center gap-2 border-b border-slate-900/60 pb-1.5 last:border-0 last:pb-0">
+                        <Badge className="bg-slate-800 text-slate-400 border border-slate-800 text-[9px] uppercase tracking-wide shrink-0 px-1 py-0">GET</Badge>
+                        <span className="truncate text-slate-300 font-semibold">{route}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
