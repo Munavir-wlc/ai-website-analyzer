@@ -67,5 +67,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Backend running at http://localhost:${PORT}`);
+  console.log(`Backend running at http://localhost:${PORT} (Node version: ${process.version})`);
 });

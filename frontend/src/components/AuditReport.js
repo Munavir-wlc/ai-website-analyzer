@@ -95,6 +95,14 @@ export default function AuditReport({ result, screenshots }) {
   const robots = result.robotsData || { exists: false, paths: [], sensitiveFound: [], raw: '' };
   const waf = result.wafData || { detected: false, name: null, confidence: 'low', source: null };
   const apiDocs = result.apiDiscoveryData || { scanned: false, swaggerDocs: [], apiRoutes: [], totalDiscovered: 0 };
+  const loadTest = result.loadTestData || { scanned: false, totalRequests: 0, successfulRequests: 0, failedRequests: 0, avgResponseTimeMs: 0, minResponseTimeMs: 0, maxResponseTimeMs: 0, requestsPerSecond: 0, statusCodes: {}, rateLimitDetected: false, rateLimitHeadersFound: [], verdict: '' };
+  const securityScore = result.securityScore ?? result.score ?? 0;
+  const criticalCount = result.critical ?? breakdown.critical ?? 0;
+  const highCount = result.high ?? breakdown.high ?? 0;
+  const mediumCount = result.medium ?? breakdown.medium ?? 0;
+  const lowCount = result.low ?? breakdown.low ?? 0;
+  const vulnerabilities = result.vulnerabilities || result.findings || [];
+  const recommendations = result.recommendations || [];
 
   const sslDaysColor = ssl.daysRemaining > 60 
     ? 'text-emerald-400' 
@@ -135,8 +143,12 @@ export default function AuditReport({ result, screenshots }) {
           .text-white, .text-slate-100, .text-slate-200, .text-slate-350, .text-slate-400 {
             color: #1e293b !important;
           }
-          .border-slate-800, .border-slate-700 {
+          .border-slate-800, .border-slate-700, .border {
             border-color: #cbd5e1 !important;
+          }
+          .border {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
           .shadow-2xl, .shadow-xl, .shadow-lg, .shadow-sm {
             box-shadow: none !important;
@@ -895,6 +907,141 @@ export default function AuditReport({ result, screenshots }) {
         </Card>
       )}
 
+      {/* OWASP ZAP VAPT Security Report */}
+      {result.vulnerabilities && result.vulnerabilities.length > 0 && (
+        <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+          <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+            <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-indigo-400" /> OWASP ZAP VAPT Security Scan Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 space-y-6">
+            {/* Score & Risk Distribution */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-slate-950/40 p-5 rounded-2xl border border-slate-800/60 flex flex-col items-center justify-center text-center">
+                <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider mb-2">VAPT Security Score</span>
+                <span className="text-5xl font-extrabold text-white block mb-1">
+                  {securityScore}
+                </span>
+                <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Weighted Risk Deductions</span>
+              </div>
+
+              <div className="bg-slate-950/40 p-5 rounded-2xl border border-slate-800/60 md:col-span-2 space-y-4">
+                <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Severity Risk Distribution</span>
+                
+                <div className="grid grid-cols-4 gap-2 text-center text-xs font-bold pt-1">
+                  <div className="bg-rose-500/10 text-rose-400 border border-rose-500/20 p-2.5 rounded-xl">
+                    <span className="text-lg block font-extrabold">{criticalCount}</span>
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wide">Critical</span>
+                  </div>
+                  <div className="bg-amber-500/10 text-amber-400 border border-amber-500/20 p-2.5 rounded-xl">
+                    <span className="text-lg block font-extrabold">{highCount}</span>
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wide">High</span>
+                  </div>
+                  <div className="bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 p-2.5 rounded-xl">
+                    <span className="text-lg block font-extrabold">{mediumCount}</span>
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wide">Medium</span>
+                  </div>
+                  <div className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 p-2.5 rounded-xl">
+                    <span className="text-lg block font-extrabold">{lowCount}</span>
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wide">Low</span>
+                  </div>
+                </div>
+
+                {/* Progress bar scale */}
+                <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden flex">
+                  {Array.from({ length: criticalCount }).map((_, i) => (
+                    <div key={`c-${i}`} className="h-full bg-rose-500 flex-1 border-r border-slate-950" />
+                  ))}
+                  {Array.from({ length: highCount }).map((_, i) => (
+                    <div key={`h-${i}`} className="h-full bg-amber-500 flex-1 border-r border-slate-950" />
+                  ))}
+                  {Array.from({ length: mediumCount }).map((_, i) => (
+                    <div key={`m-${i}`} className="h-full bg-yellow-500 flex-1 border-r border-slate-950" />
+                  ))}
+                  {Array.from({ length: lowCount }).map((_, i) => (
+                    <div key={`l-${i}`} className="h-full bg-indigo-500 flex-1 border-r border-slate-950" />
+                  ))}
+                  {criticalCount === 0 && highCount === 0 && mediumCount === 0 && lowCount === 0 && (
+                    <div className="h-full bg-emerald-500 w-full" />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Vulnerability Table */}
+            <div className="space-y-3 pt-2">
+              <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Discovered Vulnerabilities Table</span>
+              <div className="overflow-x-auto border border-slate-800 rounded-2xl bg-slate-950/20">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-500 text-xs font-bold uppercase tracking-wider bg-slate-950/40">
+                      <th className="py-3 px-4">Vulnerability / Alert</th>
+                      <th className="py-3 px-4">Severity</th>
+                      <th className="py-3 px-4">Target Param</th>
+                      <th className="py-3 px-4">CWE / OWASP</th>
+                      <th className="py-3 px-4">Target Endpoint</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850 text-xs font-semibold">
+                    {vulnerabilities.map((vuln, idx) => {
+                      const sevColors = {
+                        critical: 'bg-rose-500/10 text-rose-400 border border-rose-500/20',
+                        high: 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
+                        medium: 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20',
+                        low: 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                      };
+                      return (
+                        <tr key={idx} className="hover:bg-slate-950/40">
+                          <td className="py-3.5 px-4 text-slate-200 font-bold">{vuln.title}</td>
+                          <td className="py-3.5 px-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
+                              sevColors[vuln.severity?.toLowerCase()] || 'bg-slate-800 text-slate-400'
+                            }`}>
+                              {vuln.severity || 'low'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono text-slate-400">{vuln.evidence?.param || 'N/A'}</td>
+                          <td className="py-3.5 px-4 font-mono text-slate-350">{vuln.cwe || vuln.owasp || 'N/A'}</td>
+                          <td className="py-3.5 px-4 font-mono text-slate-400 break-all">{vuln.evidence?.url || result.scannedUrl || result.url}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Recommendations Shelf */}
+            <div className="space-y-4 pt-2">
+              <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">VAPT Security Recommendations</span>
+              <div className="grid grid-cols-1 gap-4">
+                {recommendations.map((rec, idx) => (
+                  <div key={idx} className="bg-slate-950/40 p-4 border border-slate-800/80 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-white text-sm">{rec.title}</h4>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold ${
+                        rec.severity === 'critical' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        : rec.severity === 'high' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                        : rec.severity === 'medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                        : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                      }`}>
+                        {rec.severity}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">{rec.description}</p>
+                    <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800/40 mt-1">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase block mb-1">Fix Remediation:</span>
+                      <p className="text-xs text-indigo-350 font-medium leading-relaxed">{rec.remediation}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* HTTP Redirect Chain Card */}
       <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
         <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
@@ -985,6 +1132,121 @@ export default function AuditReport({ result, screenshots }) {
               <span className="font-semibold text-slate-200 mt-1.5 block">—</span>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Load Resilience & Rate Limiting Card */}
+      <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+        <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+          <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+            <Cpu className="h-5 w-5 text-indigo-400" /> Load Resilience & Rate Limiting Analysis
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0 space-y-6 text-sm">
+          {!loadTest.scanned ? (
+            <div className="py-4 text-center text-slate-500 font-semibold">
+              {loadTest.verdict || 'Load resilience test details were not captured.'}
+            </div>
+          ) : (
+            <>
+              {/* Metrics grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-slate-950/40 p-4 rounded-2xl border border-slate-800/60">
+                  <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Average Latency</span>
+                  <span className="font-extrabold text-white text-xl mt-1 block">{loadTest.avgResponseTimeMs} ms</span>
+                </div>
+                <div className="bg-slate-950/40 p-4 rounded-2xl border border-slate-800/60">
+                  <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Min / Max Latency</span>
+                  <span className="font-extrabold text-white text-base mt-1.5 block">
+                    {loadTest.minResponseTimeMs} ms / {loadTest.maxResponseTimeMs} ms
+                  </span>
+                </div>
+                <div className="bg-slate-950/40 p-4 rounded-2xl border border-slate-800/60">
+                  <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Request Success Rate</span>
+                  <span className={`font-extrabold text-lg mt-1 block ${
+                    loadTest.failedRequests === 0 ? 'text-emerald-400' : 'text-amber-400'
+                  }`}>
+                    {loadTest.successfulRequests} / {loadTest.totalRequests} OK
+                  </span>
+                </div>
+                <div className="bg-slate-950/40 p-4 rounded-2xl border border-slate-800/60">
+                  <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Throughput Rate</span>
+                  <span className="font-extrabold text-white text-xl mt-1 block">
+                    {loadTest.requestsPerSecond} req/sec
+                  </span>
+                </div>
+              </div>
+
+              {/* Status codes and rate limiting details */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                <div className="bg-slate-950/30 rounded-2xl p-4 border border-slate-800/80">
+                  <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider mb-3">HTTP Status Code Distribution</span>
+                  <div className="space-y-2">
+                    {Object.keys(loadTest.statusCodes || {}).map((code) => {
+                      const count = loadTest.statusCodes[code];
+                      const isSuccess = code.startsWith('2') || code === '301' || code === '302';
+                      const isRateLimit = code === '429';
+                      return (
+                        <div key={code} className="flex justify-between items-center text-xs py-1 border-b border-slate-800/40 last:border-0">
+                          <span className="font-mono text-slate-350 text-[11px]">Status {code}</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            isSuccess ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : isRateLimit ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                            : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                          }`}>
+                            {count} requests
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/30 rounded-2xl p-4 border border-slate-800/80 flex flex-col justify-between">
+                  <div>
+                    <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider mb-2">Rate Limiting Detection</span>
+                    <span className={`inline-flex items-center gap-1.5 font-bold mt-1 text-sm ${
+                      loadTest.rateLimitDetected ? 'text-emerald-400' : 'text-amber-400'
+                    }`}>
+                      <span className={`w-2.5 h-2.5 rounded-full ${
+                        loadTest.rateLimitDetected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-500'
+                      }`} />
+                      {loadTest.rateLimitDetected ? 'Rate Limiting Active / Headers Detected' : 'No Active Rate Limiter Detected'}
+                    </span>
+                    {loadTest.rateLimitHeadersFound && loadTest.rateLimitHeadersFound.length > 0 && (
+                      <div className="mt-2.5 space-y-1">
+                        <span className="text-[10px] text-slate-500 font-semibold block uppercase">Detected Headers:</span>
+                        <div className="flex flex-wrap gap-1">
+                          {loadTest.rateLimitHeadersFound.map((hdr) => (
+                            <span key={hdr} className="bg-slate-900 text-slate-300 border border-slate-800 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                              {hdr}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-4 border-t border-slate-800/60 pt-3">
+                    <span className="text-[10px] text-slate-500 font-bold block uppercase mb-1">DoS / Abuse Resilience:</span>
+                    <span className="text-xs text-slate-300 leading-relaxed font-medium block">
+                      {loadTest.rateLimitDetected 
+                        ? 'Low Risk: Automated crawler floods and brute-force scanners will be safely throttled.' 
+                        : 'Medium Risk: Server lacks request rate-limiting. Vulnerable to scanner noise and brute-force.'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* VAPT Load Verdict */}
+              <div className="bg-slate-950/60 rounded-2xl p-5 border border-slate-850 relative overflow-hidden">
+                <div className="absolute top-0 bottom-0 left-0 w-1.5 bg-indigo-500" />
+                <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider mb-1.5">VAPT Resilience Verdict</span>
+                <p className="text-slate-200 text-xs leading-relaxed font-semibold">
+                  {loadTest.verdict}
+                </p>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

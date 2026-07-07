@@ -14,14 +14,38 @@ export default function ResultsPage() {
   const [screenshots, setScreenshots] = useState({ loading: false, desktop: null, mobile: null, error: null });
 
   useEffect(() => {
-    try {
-      const stored = sessionStorage.getItem('scanResult');
-      setResult(stored ? JSON.parse(stored) : null);
-    } catch (e) {
-      console.error('Failed to parse scanResult', e);
-      setResult(null);
+    const urlParams = new URLSearchParams(window.location.search);
+    const scanId = urlParams.get('scanId');
+
+    if (scanId) {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      fetch(`${API_URL}/api/scan/results/${scanId}`)
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error(`Report service returned status ${res.status}`);
+          }
+          return res.json();
+        })
+        .then((data) => {
+          setResult(data);
+          setHasChecked(true);
+        })
+        .catch((err) => {
+          console.error('[Results Fetch Error]:', err);
+          setResult(null);
+          setHasChecked(true);
+        });
+    } else {
+      // Fallback to legacy sessionStorage
+      try {
+        const stored = sessionStorage.getItem('scanResult');
+        setResult(stored ? JSON.parse(stored) : null);
+      } catch (e) {
+        console.error('Failed to parse scanResult', e);
+        setResult(null);
+      }
+      setHasChecked(true);
     }
-    setHasChecked(true);
   }, []);
 
   useEffect(() => {

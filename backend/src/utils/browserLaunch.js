@@ -42,9 +42,10 @@ const DEFAULT_ARGS = [
 async function launchBrowser(options = {}) {
   let puppeteer;
   try {
-    puppeteer = require('puppeteer');
+    const puppeteerModule = await import('puppeteer');
+    puppeteer = puppeteerModule.default || puppeteerModule;
   } catch (e) {
-    throw new Error('Puppeteer is required. Install with: npm install puppeteer');
+    throw new Error(`Puppeteer import failed: ${e.message}. Try reinstalling or running under Node v22.`);
   }
 
   const executablePath = getExecutablePath();

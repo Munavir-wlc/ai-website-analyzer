@@ -11,6 +11,7 @@ export default function ScanForm() {
   const [url, setUrl] = useState('');
   const [consent, setConsent] = useState(false);
   const [mode, setMode] = useState('full'); // 'quick' or 'full'
+  const [useZap, setUseZap] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   
@@ -28,6 +29,12 @@ export default function ScanForm() {
     whois_check: 'pending',
     redirect_check: 'pending',
     robots_check: 'pending',
+    load_test: 'pending',
+    zap_init: 'pending',
+    zap_spider: 'pending',
+    zap_pscan: 'pending',
+    zap_ascan: 'pending',
+    zap_alerts: 'pending',
     ai_analysis: 'pending'
   });
 
@@ -57,6 +64,12 @@ export default function ScanForm() {
       whois_check: 'pending',
       redirect_check: 'pending',
       robots_check: 'pending',
+      load_test: mode === 'quick' ? 'skipped' : 'pending',
+      zap_init: useZap ? 'pending' : 'skipped',
+      zap_spider: useZap ? 'pending' : 'skipped',
+      zap_pscan: useZap ? 'pending' : 'skipped',
+      zap_ascan: useZap ? 'pending' : 'skipped',
+      zap_alerts: useZap ? 'pending' : 'skipped',
       ai_analysis: mode === 'quick' ? 'skipped' : 'pending'
     });
 
@@ -79,7 +92,8 @@ export default function ScanForm() {
             socketId: socket.id,
             authCookie: authCookie.trim(),
             authHeader: authHeader.trim(),
-            delay
+            delay,
+            useZap
           }),
         });
         
@@ -89,28 +103,14 @@ export default function ScanForm() {
           throw new Error(data.error || 'Scan failed');
         }
         
-        // Save scan result
-        sessionStorage.setItem('scanResult', JSON.stringify(data));
-        
-        // Final transition to complete
-        setStepStates(prev => ({
-          ...prev,
-          crawling: 'completed',
-          ssl_check: 'completed',
-          dns_check: 'completed',
-          file_check: 'completed',
-          port_scan: 'completed',
-          whois_check: 'completed',
-          redirect_check: 'completed',
-          robots_check: 'completed',
-          ai_analysis: mode === 'quick' ? 'skipped' : 'completed'
-        }));
-        
-        // Redirect to results page
-        setTimeout(() => {
-          socket.disconnect();
-          router.push('/results');
-        }, 800);
+        if (data.status === 'processing') {
+          console.log('[ScanForm] ZAP scan is processing in the background, waiting for socket payload...');
+          return;
+        }
+
+        // Redirect to results page using scanId
+        socket.disconnect();
+        router.push(`/results?scanId=${data.scanId}`);
 
       } catch (err) {
         setError(err.message);
@@ -143,25 +143,7 @@ export default function ScanForm() {
         // Mark the current step status
         if (status === 'in_progress') {
           next[step] = 'in_progress';
-          // Mark any previous steps as completed if they are still pending
-          const stepOrder = [
-            'crawling',
-            'ssl_check',
-            'dns_check',
-            'file_check',
-            'port_scan',
-            'whois_check',
-            'redirect_check',
-            'robots_check',
-            'ai_analysis'
-          ];
-          const currentIndex = stepOrder.indexOf(step);
-          for (let i = 0; i < currentIndex; i++) {
-            const prevStep = stepOrder[i];
-            if (next[prevStep] === 'pending' || next[prevStep] === 'in_progress') {
-              next[prevStep] = 'completed';
-            }
-          }
+          // Ticks are set strictly when step completed events arrive
         } else if (status === 'completed') {
           next[step] = 'completed';
         } else if (status === 'failed') {
@@ -169,11 +151,27 @@ export default function ScanForm() {
         }
         
         if (mode === 'quick') {
+          next.load_test = 'skipped';
           next.ai_analysis = 'skipped';
+        }
+
+        if (!useZap) {
+          next.zap_init = 'skipped';
+          next.zap_spider = 'skipped';
+          next.zap_pscan = 'skipped';
+          next.zap_ascan = 'skipped';
+          next.zap_alerts = 'skipped';
         }
         
         return next;
       });
+    });
+
+    // 4. Listen to final async ZAP completion event
+    socket.on('scan_complete', (data) => {
+      console.log('[socket] Scan complete received:', data);
+      socket.disconnect();
+      router.push(`/results?scanId=${data.scanId || (data.report && data.report.scanId)}`);
     });
   }
 
@@ -186,6 +184,14 @@ export default function ScanForm() {
     { id: 'whois_check', label: 'Domain Registry WHOIS' },
     { id: 'redirect_check', label: 'Redirect Chain Inspection' },
     { id: 'robots_check', label: 'Robots.txt Path Auditor' },
+    { id: 'load_test', label: 'Load Resilience & Rate Limiting' },
+    ...(useZap ? [
+      { id: 'zap_init', label: 'Initializing ZAP Interface' },
+      { id: 'zap_spider', label: 'ZAP Crawler Spidering' },
+      { id: 'zap_pscan', label: 'ZAP Passive Analysis' },
+      { id: 'zap_ascan', label: 'ZAP Active Scan Payloads' },
+      { id: 'zap_alerts', label: 'Compiling ZAP Findings' }
+    ] : []),
     { id: 'ai_analysis', label: 'AI Risk Threat Model' }
   ];
 
@@ -389,6 +395,23 @@ export default function ScanForm() {
           />
           <label htmlFor="consent" className="text-xs text-slate-400 leading-normal cursor-pointer select-none">
             I certify that I am authorized to scan this target domain. Unauthorized scanning may violate computer trespass regulations.
+          </label>
+        </div>
+      )}
+
+      {/* Deep Security Scan (OWASP ZAP) Checkbox */}
+      {mode === 'full' && (
+        <div className="flex items-start gap-3 p-3 bg-slate-950/30 border border-slate-800/40 rounded-xl mt-3">
+          <input
+            id="useZap"
+            type="checkbox"
+            checked={useZap}
+            onChange={(e) => setUseZap(e.target.checked)}
+            className="w-4 h-4 text-indigo-600 border-slate-700 rounded bg-slate-900 focus:ring-indigo-500 mt-1 cursor-pointer"
+          />
+          <label htmlFor="useZap" className="text-xs text-slate-400 leading-normal cursor-pointer select-none">
+            <span className="font-semibold text-slate-200 block mb-0.5">Deep Security Scan (OWASP ZAP)</span>
+            Enables active vulnerability injection probes, target endpoint spidering, and passive analysis using OWASP ZAP container.
           </label>
         </div>
       )}

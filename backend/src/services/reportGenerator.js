@@ -21,7 +21,7 @@ function scoreToGrade(score) {
   return 'F';
 }
 
-function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled }) {
+function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled, loadTestResult, zapFindings }) {
   const report = {
     url,
     domain: null,
@@ -66,8 +66,39 @@ function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled
     headersGrade: { score: 0, grade: 'F', breakdown: {} },
     riskBreakdown: { critical: 0, high: 0, medium: 0, low: 0 },
     topPriority: [],
-    complianceFlags: { gdpr: false, pci: false, hipaa: false }
+    complianceFlags: { gdpr: false, pci: false, hipaa: false },
+    loadTestData: {
+      scanned: false,
+      totalRequests: 0,
+      successfulRequests: 0,
+      failedRequests: 0,
+      avgResponseTimeMs: 0,
+      minResponseTimeMs: 0,
+      maxResponseTimeMs: 0,
+      requestsPerSecond: 0,
+      statusCodes: {},
+      rateLimitDetected: false,
+      rateLimitHeadersFound: [],
+      verdict: 'No load resilience test was executed.'
+    }
   };
+
+  if (loadTestResult) {
+    report.loadTestData = {
+      scanned: loadTestResult.scanned || false,
+      totalRequests: loadTestResult.totalRequests || 0,
+      successfulRequests: loadTestResult.successfulRequests || 0,
+      failedRequests: loadTestResult.failedRequests || 0,
+      avgResponseTimeMs: loadTestResult.avgResponseTimeMs || 0,
+      minResponseTimeMs: loadTestResult.minResponseTimeMs || 0,
+      maxResponseTimeMs: loadTestResult.maxResponseTimeMs || 0,
+      requestsPerSecond: loadTestResult.requestsPerSecond || 0,
+      statusCodes: loadTestResult.statusCodes || {},
+      rateLimitDetected: !!loadTestResult.rateLimitDetected,
+      rateLimitHeadersFound: loadTestResult.rateLimitHeadersFound || [],
+      verdict: loadTestResult.verdict || ''
+    };
+  }
 
   try {
     report.domain = new URL(url).hostname;
@@ -187,6 +218,50 @@ function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled
     const hipaa = hasHstsRisk || hasSslRisk || report.findings.some(f => f.severity === 'critical');
 
     report.complianceFlags = { gdpr, pci, hipaa };
+
+    // Calculate critical, high, medium, low counts across findings
+    let criticalCount = 0;
+    let highCount = 0;
+    let mediumCount = 0;
+    let lowCount = 0;
+
+    for (const finding of report.findings) {
+      const severity = finding.severity?.toLowerCase();
+      if (severity === 'critical') criticalCount++;
+      else if (severity === 'high') highCount++;
+      else if (severity === 'medium') mediumCount++;
+      else if (severity === 'low') lowCount++;
+    }
+
+    // Compute the VAPT Security Score formula: 100 - (30 * critical) - (15 * high) - (5 * medium) - (2 * low)
+    const zapScore = 100 - (30 * criticalCount) - (15 * highCount) - (5 * mediumCount) - (2 * lowCount);
+    report.securityScore = Math.max(0, zapScore);
+    report.critical = criticalCount;
+    report.high = highCount;
+    report.medium = mediumCount;
+    report.low = lowCount;
+
+    // Override main score and grade to align the dashboard charts
+    if (zapFindings && zapFindings.length > 0) {
+      report.score = report.securityScore;
+      report.grade = scoreToGrade(report.score);
+      report.overallScore = report.score;
+      report.overallGrade = report.grade;
+    }
+
+    // Populate vulnerabilities list
+    report.vulnerabilities = report.findings;
+
+    // Compile recommendations
+    report.recommendations = report.findings.map((f) => ({
+      id: f.id,
+      title: f.title,
+      severity: f.severity,
+      description: f.description,
+      remediation: f.remediation,
+      owasp: f.owasp,
+      cwe: f.cwe
+    }));
   }
 
   return report;
