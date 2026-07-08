@@ -65,19 +65,22 @@ async function executeZapScan(targetUrl, onProgress) {
   const isOnline = await checkZapConnection();
 
   if (!isOnline) {
-    console.log('[zapScanner] Running in VAPT Demonstration Mode (ZAP is offline)');
-    onProgress('zap_init', 'in_progress', { message: 'Initializing mock ZAP sandbox...' });
-    await sleep(1000);
-    onProgress('zap_spider', 'in_progress', { message: 'Spidering target endpoints...' });
-    await sleep(1500);
-    onProgress('zap_pscan', 'in_progress', { message: 'Performing passive analysis...' });
-    await sleep(1000);
-    onProgress('zap_ascan', 'in_progress', { message: 'Executing active scan payloads...' });
-    await sleep(2000);
-    onProgress('zap_alerts', 'in_progress', { message: 'Compiling findings database...' });
-    await sleep(800);
-
-    return getDemoVulnerabilities(targetUrl);
+    console.warn('[zapScanner] OWASP ZAP is offline. Skipping ZAP scan; no demo findings will be returned.');
+    const error = `OWASP ZAP API at ${ZAP_URL} is unavailable.`;
+    if (onProgress) {
+      onProgress('zap_init', 'failed', { error });
+      onProgress('zap_spider', 'failed', { error: 'Skipped because ZAP is unavailable.' });
+      onProgress('zap_pscan', 'failed', { error: 'Skipped because ZAP is unavailable.' });
+      onProgress('zap_ascan', 'failed', { error: 'Skipped because ZAP is unavailable.' });
+      onProgress('zap_alerts', 'failed', { error: 'Skipped because ZAP is unavailable.' });
+    }
+    return {
+      scanned: false,
+      available: false,
+      status: 'skipped',
+      error,
+      findings: []
+    };
   }
 
   const headers = ZAP_API_KEY ? { 'X-ZAP-API-Key': ZAP_API_KEY } : {};
@@ -278,97 +281,25 @@ async function executeZapScan(targetUrl, onProgress) {
     });
 
     onProgress('zap_alerts', 'completed');
-    return findings;
+    return {
+      scanned: true,
+      available: true,
+      status: 'completed',
+      error: null,
+      findings
+    };
 
   } catch (err) {
     console.error('[zapScanner] Live ZAP Scan failed:', err.message);
     onProgress('zap_alerts', 'failed', { error: `OWASP ZAP scan failed: ${err.message}` });
-    return getDemoVulnerabilities(targetUrl);
-  }
-}
-
-/**
- * Returns a high-fidelity list of VAPT findings for showcase/demonstration.
- */
-function getDemoVulnerabilities(targetUrl) {
-  const domain = new URL(targetUrl).hostname;
-  return [
-    {
-      id: 'zap-sql-injection-demo',
-      title: 'SQL Injection (Blind / Time-Based)',
-      severity: 'critical',
-      category: 'Database Injection',
-      description: 'A time-based blind SQL injection vulnerability was detected in the login form endpoint. An attacker could send crafted SQL query clauses and bypass application controls, leading to database schema traversal and data exfiltration.',
-      remediation: 'Implement parameterized SQL queries using prepared statements. Sanitize and strongly type check all incoming requests on database drivers.',
-      evidence: {
-        url: `${targetUrl}/api/v1/users/login`,
-        param: 'username',
-        evidence: "username=admin' AND (SELECT 9921 FROM (SELECT(SLEEP(5)))qDpn) AND 'tST'='tST"
-      },
-      owasp: 'A03:2021-Injection',
-      cwe: 'CWE-89'
-    },
-    {
-      id: 'zap-path-traversal-demo',
-      title: 'Directory Path Traversal',
-      severity: 'critical',
-      category: 'File Inclusion',
-      description: 'The server allows arbitrary file reads outside of the document web root directory via filesystem parameters. Attackers can read sensitive configs, private keys, or environment files.',
-      remediation: 'Do not resolve user inputs directly in filesystem open/read operations. Sanitize paths against directory breakout characters (../) and use strict file ID maps.',
-      evidence: {
-        url: `${targetUrl}/static/download`,
-        param: 'file',
-        evidence: '?file=../../../../etc/passwd'
-      },
-      owasp: 'A01:2021-Broken Access Control',
-      cwe: 'CWE-22'
-    },
-    {
-      id: 'zap-xss-demo',
-      title: 'Reflected Cross-Site Scripting (XSS)',
-      severity: 'high',
-      category: 'Injection',
-      description: 'The target reflects parameters in its search response without entity encoding. An attacker can distribute links containing malicious script blocks executing in the victim\'s browser session context.',
-      remediation: 'Implement HTML entity encoding and sanitize parameters prior to rendering in client layouts. Configure a robust Content-Security-Policy (CSP).',
-      evidence: {
-        url: `${targetUrl}/search`,
-        param: 'q',
-        evidence: 'q=<script>alert(document.cookie)</script>'
-      },
-      owasp: 'A03:2021-Injection',
-      cwe: 'CWE-79'
-    },
-    {
-      id: 'zap-csrf-demo',
-      title: 'Cross-Site Request Forgery (CSRF)',
-      severity: 'medium',
-      category: 'Session Vulnerability',
-      description: 'State-changing POST forms on the dashboard page do not validate anti-CSRF challenge tokens, exposing users to unauthorized execution triggers.',
-      remediation: 'Configure unique cryptographically secure anti-CSRF headers for POST request chains, or enforce Strict/Lax SameSite cookies flags.',
-      evidence: {
-        url: `${targetUrl}/dashboard/profile/update`,
-        param: 'N/A',
-        evidence: 'Missing verification token field'
-      },
-      owasp: 'A04:2021-Insecure Design',
-      cwe: 'CWE-352'
-    },
-    {
-      id: 'zap-clickjacking-demo',
-      title: 'Missing X-Frame-Options (Clickjacking Protection)',
-      severity: 'low',
-      category: 'Security Headers',
-      description: 'The response header does not restrict document embedding (e.g. X-Frame-Options or frame-ancestors CSP directive), making the layout targetable by frame layering visual tricks.',
-      remediation: 'Configure the X-Frame-Options header to DENY or SAMEORIGIN.',
-      evidence: {
-        url: targetUrl,
-        param: 'N/A',
-        evidence: 'Header X-Frame-Options not present'
-      },
-      owasp: 'A05:2021-Security Misconfiguration',
-      cwe: 'CWE-1021'
+    return {
+      scanned: false,
+      available: true,
+      status: 'failed',
+      error: err.message,
+      findings: []
     }
-  ];
+  }
 }
 
 module.exports = {

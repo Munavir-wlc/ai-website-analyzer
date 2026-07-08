@@ -21,7 +21,25 @@ function scoreToGrade(score) {
   return 'F';
 }
 
-function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled, loadTestResult, zapFindings }) {
+function normalizeFinding(finding) {
+  const id = String(finding.id || '');
+  const category = String(finding.category || '');
+  const source = finding.source
+    || (id.startsWith('zap-') || category === 'VAPT Scan' ? 'owasp-zap'
+      : id.startsWith('reflected-xss-') || id.startsWith('sql-injection-') || id.startsWith('cmd-injection-') || id.startsWith('path-traversal-') ? 'active-probe'
+      : 'deterministic');
+
+  const confidence = finding.confidence
+    || (source === 'owasp-zap' || source === 'active-probe' ? 'medium' : 'high');
+
+  return {
+    ...finding,
+    source,
+    confidence
+  };
+}
+
+function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled, loadTestResult, zapFindings, zapScanData }) {
   const report = {
     url,
     domain: null,
@@ -80,8 +98,33 @@ function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled
       rateLimitDetected: false,
       rateLimitHeadersFound: [],
       verdict: 'No load resilience test was executed.'
+    },
+    zapScanData: {
+      scanned: false,
+      available: false,
+      status: 'not_requested',
+      error: null,
+      findingsCount: 0
     }
   };
+
+  if (zapScanData) {
+    report.zapScanData = {
+      scanned: !!zapScanData.scanned,
+      available: !!zapScanData.available,
+      status: zapScanData.status || (zapScanData.scanned ? 'completed' : 'skipped'),
+      error: zapScanData.error || null,
+      findingsCount: Array.isArray(zapScanData.findings) ? zapScanData.findings.length : 0
+    };
+  } else if (Array.isArray(zapFindings)) {
+    report.zapScanData = {
+      scanned: zapFindings.length > 0,
+      available: zapFindings.length > 0,
+      status: zapFindings.length > 0 ? 'completed' : 'not_requested',
+      error: null,
+      findingsCount: zapFindings.length
+    };
+  }
 
   if (loadTestResult) {
     report.loadTestData = {
@@ -107,7 +150,7 @@ function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled
   }
 
   if (securityResult) {
-    report.findings = securityResult.findings || [];
+    report.findings = (securityResult.findings || []).map(normalizeFinding);
     
     // Recalculate score dynamically to handle additional findings (like XSS/SQLi or multi-page issues)
     let calculatedScore = 100;
@@ -242,7 +285,7 @@ function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled
     report.low = lowCount;
 
     // Override main score and grade to align the dashboard charts
-    if (zapFindings && zapFindings.length > 0) {
+    if (Array.isArray(zapFindings) && zapFindings.length > 0) {
       report.score = report.securityScore;
       report.grade = scoreToGrade(report.score);
       report.overallScore = report.score;

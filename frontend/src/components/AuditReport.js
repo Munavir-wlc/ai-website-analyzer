@@ -96,6 +96,7 @@ export default function AuditReport({ result, screenshots }) {
   const waf = result.wafData || { detected: false, name: null, confidence: 'low', source: null };
   const apiDocs = result.apiDiscoveryData || { scanned: false, swaggerDocs: [], apiRoutes: [], totalDiscovered: 0 };
   const loadTest = result.loadTestData || { scanned: false, totalRequests: 0, successfulRequests: 0, failedRequests: 0, avgResponseTimeMs: 0, minResponseTimeMs: 0, maxResponseTimeMs: 0, requestsPerSecond: 0, statusCodes: {}, rateLimitDetected: false, rateLimitHeadersFound: [], verdict: '' };
+  const zapScan = result.zapScanData || { scanned: false, available: false, status: 'not_requested', error: null, findingsCount: 0 };
   const securityScore = result.securityScore ?? result.score ?? 0;
   const criticalCount = result.critical ?? breakdown.critical ?? 0;
   const highCount = result.high ?? breakdown.high ?? 0;
@@ -163,7 +164,7 @@ export default function AuditReport({ result, screenshots }) {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-2.5">
-            <Shield className="h-8 w-8 text-indigo-500" /> VAPT Vulnerability Report
+            <Shield className="h-8 w-8 text-indigo-500" /> Website Security Audit Report
           </h1>
           <p className="text-slate-400 mt-1">
             Target Domain: <strong className="text-white font-semibold">{domain}</strong> 
@@ -217,7 +218,9 @@ export default function AuditReport({ result, screenshots }) {
               </div>
               <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
                 <span className="block text-[10px] text-slate-500 mb-0.5">Scan Depth</span>
-                <span className="text-white text-[11px] normal-case">{result.scanMode === 'quick' ? 'Quick (Passive)' : 'Full (Active/AI)'}</span>
+                <span className="text-white text-[11px] normal-case">
+                  {result.scanMode === 'quick' ? 'Quick Passive' : zapScan.scanned ? 'Full + ZAP' : 'Full Deterministic'}
+                </span>
               </div>
               <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
                 <span className="block text-[10px] text-slate-500 mb-0.5">Compliance</span>
@@ -907,19 +910,19 @@ export default function AuditReport({ result, screenshots }) {
         </Card>
       )}
 
-      {/* OWASP ZAP VAPT Security Report */}
-      {result.vulnerabilities && result.vulnerabilities.length > 0 && (
+      {/* OWASP ZAP Security Report */}
+      {zapScan.scanned && result.vulnerabilities && result.vulnerabilities.length > 0 && (
         <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
           <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
             <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
-              <ShieldAlert className="h-5 w-5 text-indigo-400" /> OWASP ZAP VAPT Security Scan Summary
+              <ShieldAlert className="h-5 w-5 text-indigo-400" /> OWASP ZAP Security Scan Summary
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0 space-y-6">
             {/* Score & Risk Distribution */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-slate-950/40 p-5 rounded-2xl border border-slate-800/60 flex flex-col items-center justify-center text-center">
-                <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider mb-2">VAPT Security Score</span>
+                <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider mb-2">ZAP Weighted Security Score</span>
                 <span className="text-5xl font-extrabold text-white block mb-1">
                   {securityScore}
                 </span>
@@ -1014,7 +1017,7 @@ export default function AuditReport({ result, screenshots }) {
 
             {/* Recommendations Shelf */}
             <div className="space-y-4 pt-2">
-              <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">VAPT Security Recommendations</span>
+              <span className="text-slate-500 block font-bold text-[10px] uppercase tracking-wider">Security Recommendations</span>
               <div className="grid grid-cols-1 gap-4">
                 {recommendations.map((rec, idx) => (
                   <div key={idx} className="bg-slate-950/40 p-4 border border-slate-800/80 rounded-2xl space-y-2">

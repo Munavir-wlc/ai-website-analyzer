@@ -119,7 +119,7 @@ function detectTechnologies(html, headers) {
 function runFallbackStaticChecks(url, headers, html, sslData, dnsData, exposedFiles, httpMethods) {
   return {
     findings: [],
-    summary: 'AI analysis temporarily offline. Detailed security header grader and active scanner results compiled successfully.',
+    summary: 'AI analysis was not used. Deterministic scanner results were compiled from observed headers, page content, DNS, SSL, and passive reconnaissance checks.',
     positives: []
   };
 }

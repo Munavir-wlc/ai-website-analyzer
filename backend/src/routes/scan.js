@@ -9,24 +9,68 @@ const { auditActiveVulnerabilities } = require('../services/activeScanner');
 const { auditLoadResilience } = require('../services/loadTester');
 const { isSafeUrl } = require('../utils/ssrfGuard');
 const { executeZapScan } = require('../services/zapScanner');
+const { saveReport, getReport } = require('../services/reportStore');
+const { capabilities } = require('../config/scanCapabilities');
+const { optionalAuth } = require('../middleware/auth');
 
-// In-Memory Cache for Scan Reports
-const scanReportsCache = new Map();
+function buildFinalReport(scanId, report, scanStatus = {}) {
+  return {
+    scanId,
+    score: report.score,
+    grade: report.grade,
+    findings: report.findings,
+    summary: report.summary,
+    positives: report.positives,
+    sslDetails: report.sslDetails,
+    dnsDetails: report.dnsDetails,
+    exposedFiles: report.exposedFiles,
+    scannedUrl: report.url,
+    scanDate: report.generatedAt,
+    scanDuration: report.scanDuration,
+    techStack: report.techStack,
+    cookieAudit: report.cookieAudit,
+    corsIssues: report.corsIssues,
+    mixedContent: report.mixedContent,
+    riskBreakdown: report.riskBreakdown,
+    topPriority: report.topPriority,
+    complianceFlags: report.complianceFlags,
+    portScanData: report.portScanData,
+    whoisData: report.whoisData,
+    redirectData: report.redirectData,
+    robotsData: report.robotsData,
+    scanMode: report.scanMode,
+    aiEnabled: report.aiEnabled,
+    wafData: report.wafData,
+    apiDiscoveryData: report.apiDiscoveryData,
+    headersGrade: report.headersGrade,
+    loadTestData: report.loadTestData,
+    zapScanData: report.zapScanData,
+    scanStatus
+  };
+}
 
 // GET /api/scan/results/:scanId
-router.get('/results/:scanId', (req, res) => {
+router.get('/results/:scanId', async (req, res) => {
   const { scanId } = req.params;
   console.log(`[scanRoutes] GET results requested for scanId: ${scanId}`);
-  console.log(`[scanRoutes] Current cached scan IDs:`, Array.from(scanReportsCache.keys()));
-  
-  const report = scanReportsCache.get(scanId);
-  if (!report) {
-    console.warn(`[scanRoutes] Scan report NOT found in cache for ID: ${scanId}`);
-    return res.status(404).json({ error: 'Scan report not found or expired.' });
+
+  try {
+    const report = await getReport(scanId);
+    if (!report) {
+      console.warn(`[scanRoutes] Scan report NOT found for ID: ${scanId}`);
+      return res.status(404).json({ error: 'Scan report not found or expired.' });
+    }
+
+    console.log(`[scanRoutes] Scan report found successfully for ID: ${scanId}`);
+    res.json(report);
+  } catch (err) {
+    console.error(`[scanRoutes] Failed to read scan report ${scanId}:`, err);
+    res.status(500).json({ error: 'Failed to read scan report.' });
   }
-  
-  console.log(`[scanRoutes] Scan report found successfully for ID: ${scanId}`);
-  res.json(report);
+});
+
+router.get('/capabilities', (req, res) => {
+  res.json(capabilities);
 });
 
 // Async Scan Execution Queue
@@ -34,8 +78,12 @@ const scanQueue = [];
 let queueProcessing = false;
 
 function enqueueScan(scanTask) {
+  if (scanQueue.length >= capabilities.maxQueueSize) {
+    return false;
+  }
   scanQueue.push(scanTask);
   triggerQueueProcessor();
+  return true;
 }
 
 async function triggerQueueProcessor() {
@@ -55,8 +103,9 @@ async function triggerQueueProcessor() {
 }
 
 // POST /api/scan
-router.post('/', async (req, res) => {
+router.post('/', optionalAuth, async (req, res) => {
   const startTime = Date.now();
+  const userId = req.user ? req.user._id : null;
   const scanId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
   
   try {
@@ -67,7 +116,16 @@ router.post('/', async (req, res) => {
 
     const hasConsent = !!consent;
     const scanMode = mode || 'full'; // 'quick' or 'full'
-    const throttleDelay = parseInt(delay, 10) || 0;
+    const throttleDelay = Math.min(5000, Math.max(0, parseInt(delay, 10) || 0));
+    const useAuthenticatedScan = capabilities.authenticatedScans;
+    const authOptions = useAuthenticatedScan ? { authCookie, authHeader } : {};
+    authCookie = authOptions.authCookie || '';
+    authHeader = authOptions.authHeader || '';
+    const shouldRunActive = scanMode === 'full' && capabilities.activeScans;
+    const shouldRunLoadTest = scanMode === 'full' && capabilities.loadTesting;
+    const shouldRunZap = scanMode === 'full' && !!useZap && capabilities.zapScans;
+    const runAi = capabilities.aiFindings && hasConsent && scanMode === 'full';
+    let activeScanData = { scanned: false, status: scanMode === 'full' && !capabilities.activeScans ? 'disabled' : 'not_applicable', findingsCount: 0 };
 
     // Normalize URL
     const normalizedUrl = crawler.normalizeUrl(url);
@@ -92,20 +150,13 @@ router.post('/', async (req, res) => {
       }
     };
 
-    if (useZap) {
+    if (shouldRunZap) {
       // 1. Immediately return 202 processing status to prevent HTTP connection timeout
-      res.status(202).json({
-        scanId,
-        status: 'processing',
-        message: 'Deep Security Scan (OWASP ZAP) queued successfully. The report will be delivered over WebSockets.'
-      });
-
-      // 2. Queue the heavy scanning workload
-      enqueueScan(async () => {
+      const queued = enqueueScan(async () => {
         try {
           console.log(`[scan] [${scanId}] [Async Queue] Starting crawl for: ${normalizedUrl}`);
           emitStep('crawling', 'in_progress');
-          const crawlerResult = await crawler.crawl(normalizedUrl, { authCookie, authHeader });
+          const crawlerResult = await crawler.crawl(normalizedUrl, authOptions);
           if (crawlerResult) {
             crawlerResult.authCookie = authCookie;
             crawlerResult.authHeader = authHeader;
@@ -117,15 +168,15 @@ router.post('/', async (req, res) => {
           emitStep('crawling', 'completed');
 
           // Run security audits
-          console.log(`[scan] [${scanId}] [Async Queue] Running security and VAPT checks`);
-          const securityResult = await securityAnalyzer.analyzeSecurity(crawlerResult, false, (stepName, status) => {
+          console.log(`[scan] [${scanId}] [Async Queue] Running deterministic checks`);
+          const securityResult = await securityAnalyzer.analyzeSecurity(crawlerResult, runAi, (stepName, status) => {
             emitStep(stepName, status);
           });
 
           // Run multi-page crawl checks
           try {
             console.log(`[scan] [${scanId}] [Async Queue] Initiating multi-page audit via siteCrawler`);
-            const siteCrawl = await crawlSite(normalizedUrl, { authCookie, authHeader });
+            const siteCrawl = await crawlSite(normalizedUrl, authOptions);
             if (siteCrawl && siteCrawl.pages && siteCrawl.pages.length > 1) {
               const cheerio = require('cheerio');
               for (const page of siteCrawl.pages) {
@@ -203,42 +254,53 @@ router.post('/', async (req, res) => {
           }
 
           // Active forms probing
-          emitStep('file_check', 'in_progress', { message: 'Probing input forms for SQLi and XSS...' });
-          try {
-            console.log(`[scan] [${scanId}] [Async Queue] Initiating active forms probing`);
-            const activeFindings = await auditActiveVulnerabilities(crawlerResult.html, crawlerResult.url, { authCookie, authHeader }, throttleDelay);
-            if (activeFindings && activeFindings.length > 0) {
-              for (const af of activeFindings) {
-                if (!securityResult.findings.some(f => f.id === af.id)) {
-                  securityResult.findings.push(af);
+          const activeScanData = { scanned: false, status: capabilities.activeScans ? 'not_requested' : 'disabled', findingsCount: 0 };
+          if (shouldRunActive) {
+            emitStep('file_check', 'in_progress', { message: 'Probing input forms for SQLi and XSS...' });
+            try {
+              console.log(`[scan] [${scanId}] [Async Queue] Initiating active forms probing`);
+              const activeFindings = await auditActiveVulnerabilities(crawlerResult.html, crawlerResult.url, authOptions, throttleDelay);
+              activeScanData.scanned = true;
+              activeScanData.status = 'completed';
+              activeScanData.findingsCount = activeFindings.length;
+              if (activeFindings && activeFindings.length > 0) {
+                for (const af of activeFindings) {
+                  if (!securityResult.findings.some(f => f.id === af.id)) {
+                    securityResult.findings.push(af);
+                  }
                 }
               }
+            } catch (err) {
+              console.error('Active forms scanning failed:', err);
+              activeScanData.status = 'failed';
+              activeScanData.error = err.message;
             }
-          } catch (err) {
-            console.error('Active forms scanning failed:', err);
+            emitStep('file_check', 'completed');
           }
-          emitStep('file_check', 'completed');
 
           // Load resilience testing
-          emitStep('load_test', 'in_progress', { message: 'Auditing load resilience & rate limiting...' });
-          let loadTestResult = null;
-          try {
-            console.log(`[scan] [${scanId}] [Async Queue] Initiating load resilience test`);
-            loadTestResult = await auditLoadResilience(crawlerResult.url, { authCookie, authHeader });
-          } catch (err) {
-            console.error('Load resilience audit failed:', err);
-            loadTestResult = { scanned: false, verdict: `Scan Failure: Load resilience check failed: ${err.message}` };
+          let loadTestResult = { scanned: false, verdict: capabilities.loadTesting ? 'Skipped: Load resilience test was not requested.' : 'Skipped: Load resilience testing is disabled.' };
+          if (shouldRunLoadTest) {
+            emitStep('load_test', 'in_progress', { message: 'Auditing load resilience & rate limiting...' });
+            try {
+              console.log(`[scan] [${scanId}] [Async Queue] Initiating load resilience test`);
+              loadTestResult = await auditLoadResilience(crawlerResult.url, authOptions);
+            } catch (err) {
+              console.error('Load resilience audit failed:', err);
+              loadTestResult = { scanned: false, verdict: `Scan Failure: Load resilience check failed: ${err.message}` };
+            }
+            emitStep('load_test', 'completed');
           }
-          emitStep('load_test', 'completed');
 
           // Run OWASP ZAP Scanner
           console.log(`[scan] [${scanId}] [Async Queue] Triggering OWASP ZAP scan`);
-          const zapFindings = await executeZapScan(normalizedUrl, (step, status, details) => {
+          const zapScanData = await executeZapScan(normalizedUrl, (step, status, details) => {
             emitStep(step, status, details);
           });
+          const zapFindings = Array.isArray(zapScanData?.findings) ? zapScanData.findings : [];
 
           // Merge ZAP findings
-          if (zapFindings && zapFindings.length > 0) {
+          if (zapFindings.length > 0) {
             for (const zf of zapFindings) {
               if (!securityResult.findings.some(f => f.id === zf.id)) {
                 securityResult.findings.push(zf);
@@ -254,44 +316,20 @@ router.post('/', async (req, res) => {
             url: crawlerResult.url,
             scanDuration,
             scanMode: 'full',
-            aiEnabled: false,
+            aiEnabled: runAi,
             loadTestResult,
-            zapFindings
+            zapFindings,
+            zapScanData
           });
 
-          const finalReport = {
-            scanId,
-            score: report.score,
-            grade: report.grade,
-            findings: report.findings,
-            summary: report.summary,
-            positives: report.positives,
-            sslDetails: report.sslDetails,
-            dnsDetails: report.dnsDetails,
-            exposedFiles: report.exposedFiles,
-            scannedUrl: report.url,
-            scanDate: report.generatedAt,
-            scanDuration: report.scanDuration,
-            techStack: report.techStack,
-            cookieAudit: report.cookieAudit,
-            corsIssues: report.corsIssues,
-            mixedContent: report.mixedContent,
-            riskBreakdown: report.riskBreakdown,
-            topPriority: report.topPriority,
-            complianceFlags: report.complianceFlags,
-            portScanData: report.portScanData,
-            whoisData: report.whoisData,
-            redirectData: report.redirectData,
-            robotsData: report.robotsData,
-            scanMode: report.scanMode,
-            aiEnabled: report.aiEnabled,
-            wafData: report.wafData,
-            apiDiscoveryData: report.apiDiscoveryData,
-            headersGrade: report.headersGrade,
-            loadTestData: report.loadTestData
-          };
-          console.log(`[scanRoutes] Caching async scan report. ID: ${scanId}`);
-          scanReportsCache.set(scanId, finalReport);
+          const finalReport = buildFinalReport(scanId, report, {
+            capabilities,
+            activeScanData,
+            authenticatedScan: useAuthenticatedScan,
+            requestedZap: !!useZap
+          });
+          console.log(`[scanRoutes] Persisting async scan report. ID: ${scanId}`);
+          await saveReport(scanId, finalReport, userId);
 
           emitStep('complete', 'completed', { score: report.score, grade: report.grade });
           
@@ -306,6 +344,16 @@ router.post('/', async (req, res) => {
           emitStep('complete', 'failed', { error: err.message });
         }
       });
+
+      if (!queued) {
+        return res.status(429).json({ error: 'Scan queue is full. Please try again later.' });
+      }
+
+      res.status(202).json({
+        scanId,
+        status: 'processing',
+        message: 'Deep Security Scan (OWASP ZAP) queued successfully. The report will be delivered over WebSockets.'
+      });
       return;
     }
 
@@ -313,7 +361,7 @@ router.post('/', async (req, res) => {
     // 1. Crawling Step
     emitStep('crawling', 'in_progress');
     console.log(`[scan] [${scanId}] Starting crawl for: ${normalizedUrl} (consent: ${hasConsent}, mode: ${scanMode})`);
-    const crawlerResult = await crawler.crawl(normalizedUrl, { authCookie, authHeader });
+    const crawlerResult = await crawler.crawl(normalizedUrl, authOptions);
     if (crawlerResult) {
       crawlerResult.authCookie = authCookie;
       crawlerResult.authHeader = authHeader;
@@ -333,8 +381,6 @@ router.post('/', async (req, res) => {
     // Run security analyzer passing consent, mode and callback
     console.log(`[scan] [${scanId}] Running security and VAPT checks (consent: ${hasConsent})`);
     
-    const runAi = hasConsent && scanMode === 'full';
-    
     const securityResult = await securityAnalyzer.analyzeSecurity(crawlerResult, runAi, onStep);
 
     // If full scan mode is enabled, run multi-page crawling and active form probing
@@ -343,7 +389,7 @@ router.post('/', async (req, res) => {
       emitStep('crawling', 'in_progress', { message: 'Mapping site pages...' });
       try {
         console.log(`[scan] [${scanId}] Initiating multi-page audit via siteCrawler`);
-        const siteCrawl = await crawlSite(normalizedUrl, { authCookie, authHeader });
+        const siteCrawl = await crawlSite(normalizedUrl, authOptions);
         if (siteCrawl && siteCrawl.pages && siteCrawl.pages.length > 1) {
           const cheerio = require('cheerio');
           for (const page of siteCrawl.pages) {
@@ -423,10 +469,15 @@ router.post('/', async (req, res) => {
       emitStep('crawling', 'completed');
 
       // 2. Active forms probing (reflected XSS & SQLi)
-      emitStep('file_check', 'in_progress', { message: 'Probing input forms for SQLi and XSS...' });
+      activeScanData = { scanned: false, status: capabilities.activeScans ? 'not_requested' : 'disabled', findingsCount: 0 };
+      if (shouldRunActive) {
+        emitStep('file_check', 'in_progress', { message: 'Probing input forms for SQLi and XSS...' });
       try {
         console.log(`[scan] [${scanId}] Initiating active forms probing`);
-        const activeFindings = await auditActiveVulnerabilities(crawlerResult.html, crawlerResult.url, { authCookie, authHeader }, throttleDelay);
+        const activeFindings = await auditActiveVulnerabilities(crawlerResult.html, crawlerResult.url, authOptions, throttleDelay);
+        activeScanData.scanned = true;
+        activeScanData.status = 'completed';
+        activeScanData.findingsCount = activeFindings.length;
         if (activeFindings && activeFindings.length > 0) {
           for (const af of activeFindings) {
             if (!securityResult.findings.some(f => f.id === af.id)) {
@@ -436,17 +487,20 @@ router.post('/', async (req, res) => {
         }
       } catch (err) {
         console.error('Active forms scanning failed:', err);
+        activeScanData.status = 'failed';
+        activeScanData.error = err.message;
       }
       emitStep('file_check', 'completed');
+      }
     }
 
-    let loadTestResult = { scanned: false, verdict: 'Skipped: Load resilience test is only executed in Full scan mode.' };
-    if (scanMode === 'full') {
+    let loadTestResult = { scanned: false, verdict: scanMode === 'full' && !capabilities.loadTesting ? 'Skipped: Load resilience testing is disabled.' : 'Skipped: Load resilience test is only executed in Full scan mode.' };
+    if (shouldRunLoadTest) {
       // 3. Load Resilience & Rate Limiting Test
       emitStep('load_test', 'in_progress', { message: 'Auditing load resilience & rate limiting...' });
       try {
         console.log(`[scan] [${scanId}] Initiating load resilience test`);
-        loadTestResult = await auditLoadResilience(crawlerResult.url, { authCookie, authHeader });
+        loadTestResult = await auditLoadResilience(crawlerResult.url, authOptions);
       } catch (err) {
         console.error('Load resilience audit failed:', err);
         loadTestResult = { scanned: false, verdict: `Scan Failure: Load resilience check failed: ${err.message}` };
@@ -469,39 +523,15 @@ router.post('/', async (req, res) => {
     // Send completed event to WebSocket if exists
     emitStep('complete', 'completed', { score: report.score, grade: report.grade });
 
-    const finalReport = {
-      scanId,
-      score: report.score,
-      grade: report.grade,
-      findings: report.findings,
-      summary: report.summary,
-      positives: report.positives,
-      sslDetails: report.sslDetails,
-      dnsDetails: report.dnsDetails,
-      exposedFiles: report.exposedFiles,
-      scannedUrl: report.url,
-      scanDate: report.generatedAt,
-      scanDuration: report.scanDuration,
-      techStack: report.techStack,
-      cookieAudit: report.cookieAudit,
-      corsIssues: report.corsIssues,
-      mixedContent: report.mixedContent,
-      riskBreakdown: report.riskBreakdown,
-      topPriority: report.topPriority,
-      complianceFlags: report.complianceFlags,
-      portScanData: report.portScanData,
-      whoisData: report.whoisData,
-      redirectData: report.redirectData,
-      robotsData: report.robotsData,
-      scanMode: report.scanMode,
-      aiEnabled: report.aiEnabled,
-      wafData: report.wafData,
-      apiDiscoveryData: report.apiDiscoveryData,
-      headersGrade: report.headersGrade,
-      loadTestData: report.loadTestData
-    };
-    console.log(`[scanRoutes] Caching sync scan report. ID: ${scanId}`);
-    scanReportsCache.set(scanId, finalReport);
+    const finalReport = buildFinalReport(scanId, report, {
+      capabilities,
+      activeScanData: activeScanData || { scanned: false, status: 'not_applicable', findingsCount: 0 },
+      authenticatedScan: useAuthenticatedScan,
+      requestedZap: !!useZap,
+      zapRequestStatus: useZap && !capabilities.zapScans ? 'disabled' : 'not_requested'
+    });
+    console.log(`[scanRoutes] Persisting sync scan report. ID: ${scanId}`);
+    await saveReport(scanId, finalReport, userId);
 
     res.json(finalReport);
   } catch (err) {

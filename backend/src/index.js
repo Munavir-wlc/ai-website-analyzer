@@ -12,6 +12,11 @@ const http = require('http');
 const { Server } = require('socket.io');
 const scanRoutes = require('./routes/scan');
 const screenshotRoutes = require('./routes/screenshot');
+const connectDB = require('./config/db');
+const authRoutes = require('./routes/auth');
+
+// Connect to MongoDB
+connectDB();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -22,8 +27,12 @@ const server = http.createServer(app);
 // Setup Socket.io
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    methods: ['GET', 'POST']
+    origin: [
+      process.env.FRONTEND_URL || 'http://localhost:3000',
+      'http://127.0.0.1:3000'
+    ],
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
@@ -31,7 +40,13 @@ const io = new Server(server, {
 app.set('io', io);
 
 // CORS - allow frontend origin
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000' }));
+app.use(cors({
+  origin: [
+    process.env.FRONTEND_URL || 'http://localhost:3000',
+    'http://127.0.0.1:3000'
+  ],
+  credentials: true
+}));
 
 // Rate limiting for scan endpoint
 const scanLimiter = rateLimit({
@@ -49,6 +64,9 @@ app.get('/health', (req, res) => {
 
 // Scan API - apply rate limiting
 app.use('/api/scan', scanLimiter, scanRoutes);
+
+// Auth API
+app.use('/api/auth', authRoutes);
 
 // Screenshot API - 5 per minute (Puppeteer is heavy)
 const screenshotLimiter = rateLimit({
@@ -69,3 +87,6 @@ io.on('connection', (socket) => {
 server.listen(PORT, () => {
   console.log(`Backend running at http://localhost:${PORT} (Node version: ${process.version})`);
 });
+// Trigger watch reload to pick up all active scan capabilities
+
+

@@ -4,8 +4,14 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { io } from 'socket.io-client';
 import { CheckCircle2, Loader2, Circle, AlertCircle, ShieldCheck, ChevronDown, ChevronUp, Lock } from 'lucide-react';
+import { useAuth } from '../lib/AuthContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+const ENABLE_ACTIVE_SCANS = process.env.NEXT_PUBLIC_ENABLE_ACTIVE_SCANS === 'true';
+const ENABLE_ZAP_SCANS = process.env.NEXT_PUBLIC_ENABLE_ZAP_SCANS === 'true';
+const ENABLE_LOAD_TESTING = process.env.NEXT_PUBLIC_ENABLE_LOAD_TESTING === 'true';
+const ENABLE_AUTHENTICATED_SCANS = process.env.NEXT_PUBLIC_ENABLE_AUTHENTICATED_SCANS === 'true';
+const ENABLE_AI_FINDINGS = process.env.NEXT_PUBLIC_ENABLE_AI_FINDINGS === 'true';
 
 export default function ScanForm() {
   const [url, setUrl] = useState('');
@@ -40,6 +46,7 @@ export default function ScanForm() {
 
   const socketRef = useRef(null);
   const router = useRouter();
+  const { token } = useAuth();
 
   // Cleanup socket on unmount
   useEffect(() => {
@@ -64,13 +71,13 @@ export default function ScanForm() {
       whois_check: 'pending',
       redirect_check: 'pending',
       robots_check: 'pending',
-      load_test: mode === 'quick' ? 'skipped' : 'pending',
-      zap_init: useZap ? 'pending' : 'skipped',
-      zap_spider: useZap ? 'pending' : 'skipped',
-      zap_pscan: useZap ? 'pending' : 'skipped',
-      zap_ascan: useZap ? 'pending' : 'skipped',
-      zap_alerts: useZap ? 'pending' : 'skipped',
-      ai_analysis: mode === 'quick' ? 'skipped' : 'pending'
+      load_test: mode === 'full' && ENABLE_LOAD_TESTING ? 'pending' : 'skipped',
+      zap_init: useZap && ENABLE_ZAP_SCANS ? 'pending' : 'skipped',
+      zap_spider: useZap && ENABLE_ZAP_SCANS ? 'pending' : 'skipped',
+      zap_pscan: useZap && ENABLE_ZAP_SCANS ? 'pending' : 'skipped',
+      zap_ascan: useZap && ENABLE_ZAP_SCANS ? 'pending' : 'skipped',
+      zap_alerts: useZap && ENABLE_ZAP_SCANS ? 'pending' : 'skipped',
+      ai_analysis: mode === 'full' && ENABLE_AI_FINDINGS ? 'pending' : 'skipped'
     });
 
     // 1. Establish socket.io connection
@@ -84,16 +91,19 @@ export default function ScanForm() {
       try {
         const res = await fetch(`${API_URL}/api/scan`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
           body: JSON.stringify({
             url: url.trim(),
-            consent: mode === 'quick' ? true : consent, // Quick scan runs passively, full scan needs consent
+            consent: mode === 'quick' ? true : consent,
             mode,
             socketId: socket.id,
-            authCookie: authCookie.trim(),
-            authHeader: authHeader.trim(),
-            delay,
-            useZap
+            authCookie: ENABLE_AUTHENTICATED_SCANS ? authCookie.trim() : '',
+            authHeader: ENABLE_AUTHENTICATED_SCANS ? authHeader.trim() : '',
+            delay: ENABLE_ACTIVE_SCANS ? delay : 0,
+            useZap: ENABLE_ZAP_SCANS && useZap
           }),
         });
         
@@ -150,12 +160,15 @@ export default function ScanForm() {
           next[step] = 'failed';
         }
         
-        if (mode === 'quick') {
+        if (mode === 'quick' || !ENABLE_LOAD_TESTING) {
           next.load_test = 'skipped';
+        }
+
+        if (mode === 'quick' || !ENABLE_AI_FINDINGS) {
           next.ai_analysis = 'skipped';
         }
 
-        if (!useZap) {
+        if (!useZap || !ENABLE_ZAP_SCANS) {
           next.zap_init = 'skipped';
           next.zap_spider = 'skipped';
           next.zap_pscan = 'skipped';
@@ -184,15 +197,15 @@ export default function ScanForm() {
     { id: 'whois_check', label: 'Domain Registry WHOIS' },
     { id: 'redirect_check', label: 'Redirect Chain Inspection' },
     { id: 'robots_check', label: 'Robots.txt Path Auditor' },
-    { id: 'load_test', label: 'Load Resilience & Rate Limiting' },
-    ...(useZap ? [
+    ...(ENABLE_LOAD_TESTING ? [{ id: 'load_test', label: 'Load Resilience & Rate Limiting' }] : []),
+    ...(useZap && ENABLE_ZAP_SCANS ? [
       { id: 'zap_init', label: 'Initializing ZAP Interface' },
       { id: 'zap_spider', label: 'ZAP Crawler Spidering' },
       { id: 'zap_pscan', label: 'ZAP Passive Analysis' },
       { id: 'zap_ascan', label: 'ZAP Active Scan Payloads' },
       { id: 'zap_alerts', label: 'Compiling ZAP Findings' }
     ] : []),
-    { id: 'ai_analysis', label: 'AI Risk Threat Model' }
+    ...(ENABLE_AI_FINDINGS ? [{ id: 'ai_analysis', label: 'AI Risk Threat Model' }] : [])
   ];
 
   function renderStepIcon(status) {
@@ -234,8 +247,8 @@ export default function ScanForm() {
             <ShieldCheck className="h-5 w-5 text-indigo-400 absolute" />
           </div>
           <div className="text-center">
-            <h3 className="text-lg font-bold text-white">VAPT Security Scan Running</h3>
-            <p className="text-xs text-slate-400 mt-1">Analyzing network vulnerabilities and config maps...</p>
+            <h3 className="text-lg font-bold text-white">Security Audit Running</h3>
+            <p className="text-xs text-slate-400 mt-1">Collecting observed SSL, DNS, header, crawl, and configuration data...</p>
           </div>
         </div>
 
@@ -277,7 +290,7 @@ export default function ScanForm() {
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            Quick Scan (Header VAPT)
+            Quick Headers
           </button>
           <button
             type="button"
@@ -288,7 +301,7 @@ export default function ScanForm() {
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            Full Scan (Deep AI Threat)
+            Full Deterministic
           </button>
         </div>
       </div>
@@ -310,6 +323,7 @@ export default function ScanForm() {
       </div>
 
       {/* Advanced Settings Toggle */}
+      {ENABLE_AUTHENTICATED_SCANS && (
       <div className="border border-slate-800/80 rounded-xl bg-slate-950/40 overflow-hidden transition-all">
         <button
           type="button"
@@ -360,6 +374,7 @@ export default function ScanForm() {
                 Custom Authorization or token header injected into every outbound request.
               </p>
             </div>
+            {ENABLE_ACTIVE_SCANS && (
             <div>
               <label htmlFor="delay" className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
                 Scan Rate Throttling: {delay} ms
@@ -378,12 +393,14 @@ export default function ScanForm() {
                 Introduces a request delay between active form inputs probes. Higher values reduce target server load and bypass active rate-limit blocklists.
               </p>
             </div>
+            )}
           </div>
         )}
       </div>
+      )}
 
       {/* Consent Checkbox (only show for full scan) */}
-      {mode === 'full' && (
+      {mode === 'full' && (ENABLE_ACTIVE_SCANS || ENABLE_ZAP_SCANS || ENABLE_LOAD_TESTING) && (
         <div className="flex items-start gap-3 p-3 bg-slate-950/30 border border-slate-800/40 rounded-xl">
           <input
             id="consent"
@@ -400,7 +417,7 @@ export default function ScanForm() {
       )}
 
       {/* Deep Security Scan (OWASP ZAP) Checkbox */}
-      {mode === 'full' && (
+      {mode === 'full' && ENABLE_ZAP_SCANS && (
         <div className="flex items-start gap-3 p-3 bg-slate-950/30 border border-slate-800/40 rounded-xl mt-3">
           <input
             id="useZap"

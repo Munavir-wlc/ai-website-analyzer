@@ -26,3 +26,9 @@ yarn-debug.log*
 yarn-error.log*
 logs/
 *.log
+
+# Runtime scan reports
+/backend/data/
+
+# Turbo cache
+.turbo/
