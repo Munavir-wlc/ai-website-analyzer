@@ -27,13 +27,22 @@ function getExecutablePath() {
   return undefined;
 }
 
+// For production we avoid enabling no-sandbox by default. If you understand the
+// risks and are running in an isolated container, set `PUPPETEER_ALLOW_NO_SANDBOX=true`.
 const DEFAULT_ARGS = [
-  '--no-sandbox',
-  '--disable-setuid-sandbox',
+  // '--no-sandbox',
+  // '--disable-setuid-sandbox',
   '--disable-dev-shm-usage',
   '--disable-gpu',
   '--disable-extensions',
 ];
+
+function maybeAddNoSandbox(args) {
+  if (process.env.PUPPETEER_ALLOW_NO_SANDBOX === 'true') {
+    return ['--no-sandbox', '--disable-setuid-sandbox', ...args];
+  }
+  return args;
+}
 
 /**
  * Launch Puppeteer browser with shared config.
@@ -52,7 +61,7 @@ async function launchBrowser(options = {}) {
   const launchOpts = {
     headless: options.headless ?? 'new',
     ignoreHTTPSErrors: options.ignoreHTTPSErrors ?? true,
-    args: options.args ?? [...DEFAULT_ARGS],
+    args: options.args ?? maybeAddNoSandbox([...DEFAULT_ARGS]),
   };
   if (executablePath) launchOpts.executablePath = executablePath;
 

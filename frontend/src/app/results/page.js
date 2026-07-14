@@ -7,21 +7,34 @@ import AuditReport from '../../components/AuditReport';
 import Footer from '../../components/Footer';
 import { Button } from '../../components/ui/Button';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { useAuth } from '../../lib/AuthContext';
 
 export default function ResultsPage() {
+  const { token, loading: authLoading } = useAuth();
   const [result, setResult] = useState(null);
   const [hasChecked, setHasChecked] = useState(false);
   const [screenshots, setScreenshots] = useState({ loading: false, desktop: null, mobile: null, error: null });
+  const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
+    if (authLoading) return;
+
     const urlParams = new URLSearchParams(window.location.search);
     const scanId = urlParams.get('scanId');
 
     if (scanId) {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-      fetch(`${API_URL}/api/scan/results/${scanId}`)
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      fetch(`${API_URL}/api/scan/results/${scanId}`, { headers })
         .then((res) => {
           if (!res.ok) {
+            if (res.status === 401 || res.status === 403) {
+              throw new Error('Access denied. This report belongs to a registered user and you must be logged in as the owner to view it.');
+            }
             throw new Error(`Report service returned status ${res.status}`);
           }
           return res.json();
@@ -32,6 +45,7 @@ export default function ResultsPage() {
         })
         .catch((err) => {
           console.error('[Results Fetch Error]:', err);
+          setErrorMsg(err.message);
           setResult(null);
           setHasChecked(true);
         });
@@ -46,7 +60,7 @@ export default function ResultsPage() {
       }
       setHasChecked(true);
     }
-  }, []);
+  }, [token, authLoading]);
 
   useEffect(() => {
     if (result && (result.scannedUrl || result.url)) {
@@ -99,7 +113,7 @@ export default function ResultsPage() {
     }
   }, [result]);
 
-  if (!hasChecked) {
+  if (authLoading || (!hasChecked && !result)) {
     return (
       <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
         <Navbar />
@@ -121,7 +135,7 @@ export default function ResultsPage() {
         <main className="flex-1 flex flex-col items-center justify-center p-8 text-center">
           <div className="max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative">
             <div className="absolute -inset-px bg-gradient-to-br from-indigo-500/20 to-purple-500/0 rounded-3xl -z-10" />
-            <p className="text-slate-400 font-medium mb-6">No security scan results were found in your session.</p>
+            <p className="text-slate-400 font-medium mb-6">{errorMsg || 'No security scan results were found in your session.'}</p>
             <Button asChild className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-indigo-500/20">
               <Link href="/">Go Back to Scan Form</Link>
             </Button>

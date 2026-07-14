@@ -7,7 +7,7 @@ const { protect } = require('../middleware/auth');
 
 // JWT Token Generator Utility
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'vapt_scanner_jwt_secret_token_key_2026_xyz', {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: '30d'
   });
 };

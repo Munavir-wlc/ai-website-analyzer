@@ -50,19 +50,31 @@ function buildFinalReport(scanId, report, scanStatus = {}) {
 }
 
 // GET /api/scan/results/:scanId
-router.get('/results/:scanId', async (req, res) => {
+router.get('/results/:scanId', optionalAuth, async (req, res) => {
   const { scanId } = req.params;
   console.log(`[scanRoutes] GET results requested for scanId: ${scanId}`);
 
   try {
-    const report = await getReport(scanId);
-    if (!report) {
+    const Scan = require('../models/Scan');
+    const scan = await Scan.findOne({ scanId });
+    
+    if (!scan) {
       console.warn(`[scanRoutes] Scan report NOT found for ID: ${scanId}`);
       return res.status(404).json({ error: 'Scan report not found or expired.' });
     }
 
+    // Access control: if the scan belongs to a user, verify authentication
+    if (scan.userId) {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Authentication required to view this report.' });
+      }
+      if (scan.userId.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ error: 'You are not authorized to view this report.' });
+      }
+    }
+
     console.log(`[scanRoutes] Scan report found successfully for ID: ${scanId}`);
-    res.json(report);
+    res.json(scan.report);
   } catch (err) {
     console.error(`[scanRoutes] Failed to read scan report ${scanId}:`, err);
     res.status(500).json({ error: 'Failed to read scan report.' });
