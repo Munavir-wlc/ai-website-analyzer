@@ -37,6 +37,19 @@ const ScanSchema = new mongoose.Schema({
     type: Date,
     default: null,
     index: { expiresAfterSeconds: 0 } // Expire document at the specified timestamp (null = never expire)
+  },
+  isPublic: {
+    type: Boolean,
+    default: false
+  },
+  findingStatuses: {
+    type: Map,
+    of: new mongoose.Schema({
+      status: { type: String, enum: ['open', 'accepted', 'in_progress'], default: 'open' },
+      note: { type: String, default: '' },
+      updatedAt: { type: Date, default: Date.now }
+    }, { _id: false }),
+    default: {}
   }
 });
 

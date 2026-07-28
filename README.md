@@ -1,19 +1,12 @@
 # AI Website Security VAPT Scanner
 
-An AI-assisted next-generation security vulnerability and passive reconnaissance scanning suite for web applications. The tool performs automated active and passive VAPT audits, generating high-fidelity reports detailing security grades, compliance metrics, and remediation guides.
+An AI-assisted vulnerability and passive reconnaissance scanning suite for web applications.
 
-## Core Features
+## Prerequisites
 
-- **SSRF Guard protection**: DNS-based checks to prevent server-side request forgery by blocking private, local, and cloud loopback IP addresses.
-- **Vulnerability Scanner**: Active form probes targeting reflected XSS, SQL injection, and blind time-based SQL injection.
-- **Passive Reconnaissance**:
-  - **Port Scanner**: Scans database/administrative ports for public exposure.
-  - **WHOIS Domain Registry**: Inspects domain registration health and remaining days to expiration.
-  - **Redirect Chains**: Traces multi-hop redirects and warns on unencrypted hops or cross-domain drift.
-  - **Robots.txt Auditor**: Identifies exposure of sensitive paths (e.g. `/admin`, `/api`, `/config`).
-- **SSL/TLS & DNS Health**: Audits CA details, expiration timelines, SPF, and DMARC configurations.
-- **Compliance Flag Enforcement**: Evaluates GDPR, PCI-DSS, and HIPAA posture based on configuration details.
-- **Advanced Scanning (Bypassing Paywalls)**: Injects custom Authorization headers and session Cookie states.
+- **Node.js**: `>=18.0.0`
+- **MongoDB**: Running locally on port `27017`
+- **Docker / Colima**: For running OWASP ZAP
 
 ---
 
@@ -21,47 +14,76 @@ An AI-assisted next-generation security vulnerability and passive reconnaissance
 
 ### 1. Install Dependencies
 ```bash
+pnpm install
+# or
 npm install
 ```
 
-### 2. Configure Environment
+### 2. Start OWASP ZAP (Port 8090)
+
+Choose the setup steps below depending on whether you are using **Docker Desktop** or **Colima**:
+
+#### **Option A: Using Docker Desktop**
+Just make sure Docker Desktop is running, then run:
+```bash
+docker rm -f zap-local 2>/dev/null || true && \
+docker run -d --name zap-local -p 8090:8090 -e ZAP_JVM_OPTIONS="-Xmx1536m -Xms256m" --add-host host.docker.internal:host-gateway ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.key=vapt_scanner_zap_api_key_2026_xyz -config 'api.addrs.addr.name=.*' -config api.addrs.addr.regex=true
+```
+
+#### **Option B: Using Colima**
+If you are using **Colima** on macOS:
+1. **Start Colima** with at least 4GB of RAM (ZAP is resource-intensive and will crash on default VM settings):
+   ```bash
+   colima start --cpu 2 --memory 4
+   ```
+2. **Point to Colima Docker context**:
+   ```bash
+   docker context use colima
+   ```
+3. **Start the ZAP container**:
+   ```bash
+   docker rm -f zap-local 2>/dev/null || true && \
+   docker run -d --name zap-local -p 8090:8090 -e ZAP_JVM_OPTIONS="-Xmx1536m -Xms256m" --add-host host.docker.internal:host-gateway ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.key=vapt_scanner_zap_api_key_2026_xyz -config 'api.addrs.addr.name=.*' -config api.addrs.addr.regex=true
+   ```
+   *(Note: The `--add-host host.docker.internal:host-gateway` flag is critical here, enabling ZAP inside the Colima VM to scan local targets running on your host Mac).*
+
+---
+*(After running the ZAP container, wait ~45 seconds for it to start up, then verify it is running with: `curl -s -H "X-ZAP-API-Key: vapt_scanner_zap_api_key_2026_xyz" http://localhost:8090/JSON/core/view/version/`)*
+
+
+
+### 3. Configure Environment
 Create a `.env` file in the `backend/` directory:
 ```env
 PORT=4000
-OPENAI_API_KEY=your_openai_api_key
+MONGODB_URI=mongodb://localhost:27017/ai-website-analyzer
+OPENAI_API_KEY=your_openai_api_key_here
+ENABLE_ZAP_SCANS=true
+ZAP_API_KEY=vapt_scanner_zap_api_key_2026_xyz
+ALLOW_LOCAL_SCANS=true
 ```
 
-### 3. Run Dev Mode (Turbo Repo)
-Starts the Express API on port `4000` and the Next.js Frontend on port `3000`:
+### 4. Run Development Server
 ```bash
+pnpm dev
+# or
 npm run dev
 ```
+Starts the Express API on port `4000` and the Next.js Frontend on port `3000` (or `3001`).
 
 ---
 
 ## API Documentation
 
 ### **POST** `/api/scan`
-Launches a security and VAPT scan for a target URL.
+Launches a security scan for a target URL.
 
-**Payload Specification:**
+**Payload:**
 ```json
 {
   "url": "https://example.com",
   "consent": true,
-  "mode": "quick" | "full",
-  "socketId": "socket_connection_id_for_live_progress",
-  "authCookie": "PHPSESSID=abc123xyz...",
-  "authHeader": "Bearer eyJhbGci..."
+  "mode": "full"
 }
 ```
-
-*Note: `consent` is mandatory for **Full Scan** depth to authorize active form vulnerability checking.*
-
-### **GET** `/api/screenshot`
-Generates base64-encoded screenshots of the target page on desktop and mobile viewports.
-
-**Query Parameters:**
-- `url` (Required): Target URL to capture.
-- `authCookie` (Optional)
-- `authHeader` (Optional)
+*(Note: `consent` is mandatory for active security probing.)*

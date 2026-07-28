@@ -17,7 +17,7 @@ export default function ScanForm() {
   const [url, setUrl] = useState('');
   const [consent, setConsent] = useState(false);
   const [mode, setMode] = useState('full'); // 'quick' or 'full'
-  const [useZap, setUseZap] = useState(false);
+  const [useZap, setUseZap] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   
@@ -55,6 +55,15 @@ export default function ScanForm() {
         socketRef.current.disconnect();
       }
     };
+  }, []);
+
+  // Pre-populate URL if redirected from a rescan request
+  useEffect(() => {
+    const cachedUrl = sessionStorage.getItem('rescanUrl');
+    if (cachedUrl) {
+      setUrl(cachedUrl);
+      sessionStorage.removeItem('rescanUrl');
+    }
   }, []);
 
   async function handleSubmit(e) {
@@ -199,11 +208,11 @@ export default function ScanForm() {
     { id: 'robots_check', label: 'Robots.txt Path Auditor' },
     ...(ENABLE_LOAD_TESTING ? [{ id: 'load_test', label: 'Load Resilience & Rate Limiting' }] : []),
     ...(useZap && ENABLE_ZAP_SCANS ? [
-      { id: 'zap_init', label: 'Initializing ZAP Interface' },
-      { id: 'zap_spider', label: 'ZAP Crawler Spidering' },
-      { id: 'zap_pscan', label: 'ZAP Passive Analysis' },
-      { id: 'zap_ascan', label: 'ZAP Active Scan Payloads' },
-      { id: 'zap_alerts', label: 'Compiling ZAP Findings' }
+      { id: 'zap_init', label: 'Initializing Deep Inspection Engine' },
+      { id: 'zap_spider', label: 'Deep Page & Asset Spidering' },
+      { id: 'zap_pscan', label: 'Passive Header & Security Audit' },
+      { id: 'zap_ascan', label: 'Active Vulnerability Payload Audit' },
+      { id: 'zap_alerts', label: 'Compiling Threat Intelligence' }
     ] : []),
     ...(ENABLE_AI_FINDINGS ? [{ id: 'ai_analysis', label: 'AI Risk Threat Model' }] : [])
   ];
@@ -211,32 +220,64 @@ export default function ScanForm() {
   function renderStepIcon(status) {
     switch (status) {
       case 'completed':
-        return <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />;
+        return <CheckCircle2 className="h-5 w-5 text-emerald-500 dark:text-emerald-400 shrink-0" />;
       case 'in_progress':
-        return <Loader2 className="h-5 w-5 text-indigo-400 animate-spin shrink-0" />;
+        return <Loader2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400 animate-spin shrink-0" />;
       case 'failed':
         return <AlertCircle className="h-5 w-5 text-rose-500 shrink-0" />;
       case 'skipped':
-        return <Circle className="h-5 w-5 text-slate-500 line-through opacity-50 shrink-0" />;
+        return <Circle className="h-5 w-5 text-slate-405 dark:text-slate-500 line-through opacity-50 shrink-0" />;
       default:
-        return <Circle className="h-5 w-5 text-slate-700 shrink-0" />;
+        return <Circle className="h-5 w-5 text-slate-300 dark:text-slate-700 shrink-0" />;
     }
   }
 
   function getStepStyle(status) {
     switch (status) {
       case 'completed':
-        return 'text-emerald-400 font-medium';
+        return 'text-emerald-600 dark:text-emerald-400 font-medium';
       case 'in_progress':
-        return 'text-indigo-400 font-bold';
+        return 'text-indigo-600 dark:text-indigo-400 font-bold';
       case 'failed':
-        return 'text-rose-400';
+        return 'text-rose-500 dark:text-rose-400';
       case 'skipped':
-        return 'text-slate-500 line-through';
+        return 'text-slate-405 dark:text-slate-500 line-through';
       default:
-        return 'text-slate-400';
+        return 'text-slate-500 dark:text-slate-400';
     }
   }
+
+  // Calculate percentage based on completed steps
+  const STEP_WEIGHTS = {
+    crawling: 10,
+    ssl_check: 15,
+    dns_check: 10,
+    file_check: 5,
+    port_scan: 10,
+    whois_check: 5,
+    redirect_check: 5,
+    robots_check: 5,
+    load_test: 10,
+    zap_init: 5,
+    zap_spider: 5,
+    zap_pscan: 5,
+    zap_ascan: 5,
+    zap_alerts: 5,
+    ai_analysis: 5
+  };
+
+  const scanProgress = (() => {
+    const relevantSteps = stepsList.filter(s => stepStates[s.id] !== 'skipped');
+    if (relevantSteps.length === 0) return 0;
+    const totalWeight = relevantSteps.reduce((sum, s) => sum + (STEP_WEIGHTS[s.id] || 5), 0);
+    const completedWeight = relevantSteps
+      .filter(s => stepStates[s.id] === 'completed')
+      .reduce((sum, s) => sum + (STEP_WEIGHTS[s.id] || 5), 0);
+    const inProgressWeight = relevantSteps
+      .filter(s => stepStates[s.id] === 'in_progress')
+      .reduce((sum, s) => sum + ((STEP_WEIGHTS[s.id] || 5) * 0.5), 0);
+    return Math.min(99, Math.round(((completedWeight + inProgressWeight) / totalWeight) * 100));
+  })();
 
   if (loading) {
     return (
@@ -247,16 +288,30 @@ export default function ScanForm() {
             <ShieldCheck className="h-5 w-5 text-indigo-400 absolute" />
           </div>
           <div className="text-center">
-            <h3 className="text-lg font-bold text-white">Security Audit Running</h3>
-            <p className="text-xs text-slate-400 mt-1">Collecting observed SSL, DNS, header, crawl, and configuration data...</p>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Security Audit Running</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Collecting observed SSL, DNS, header, crawl, and configuration data...</p>
           </div>
         </div>
 
-        <div className="space-y-3 bg-slate-950/80 p-5 rounded-2xl border border-slate-800">
+        {/* Progress Bar */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 dark:text-slate-400 font-medium">Scan Progress</span>
+            <span className="font-bold text-indigo-600 dark:text-indigo-400">{scanProgress}%</span>
+          </div>
+          <div className="w-full bg-slate-200 dark:bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-205 dark:border-slate-800">
+            <div
+              className="h-2 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-700"
+              style={{ width: `${scanProgress}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-3 bg-slate-105 dark:bg-slate-950/80 p-5 rounded-2xl border border-slate-205 dark:border-slate-800">
           {stepsList.map((step) => {
             const status = stepStates[step.id];
             return (
-              <div key={step.id} className="flex items-center justify-between text-sm py-1 border-b border-slate-900 last:border-0">
+              <div key={step.id} className="flex items-center justify-between text-sm py-1 border-b border-slate-205 dark:border-slate-900 last:border-0">
                 <span className={getStepStyle(status)}>{step.label}</span>
                 {renderStepIcon(status)}
               </div>
@@ -265,7 +320,7 @@ export default function ScanForm() {
         </div>
 
         {error && (
-          <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-lg text-sm text-center">
+          <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 rounded-lg text-sm text-center">
             {error}
           </div>
         )}
@@ -277,17 +332,17 @@ export default function ScanForm() {
     <form onSubmit={handleSubmit} className="w-full space-y-6">
       {/* Scan Mode Toggle */}
       <div>
-        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
           Select Audit Depth
         </label>
-        <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 border border-slate-800 rounded-xl">
+        <div className="grid grid-cols-2 gap-2 p-1 bg-slate-105 dark:bg-slate-950 border border-slate-205 dark:border-slate-800 rounded-xl">
           <button
             type="button"
             onClick={() => setMode('quick')}
             className={`py-2 px-3 text-sm font-medium rounded-lg transition-all ${
               mode === 'quick'
-                ? 'bg-slate-800 text-white shadow-md'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-md'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Quick Headers
@@ -297,8 +352,8 @@ export default function ScanForm() {
             onClick={() => setMode('full')}
             className={`py-2 px-3 text-sm font-medium rounded-lg transition-all ${
               mode === 'full'
-                ? 'bg-slate-800 text-white shadow-md'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-md'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Full Deterministic
@@ -308,7 +363,7 @@ export default function ScanForm() {
 
       {/* Target URL */}
       <div>
-        <label htmlFor="url" className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+        <label htmlFor="url" className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
           Target Domain / URL
         </label>
         <input
@@ -318,32 +373,32 @@ export default function ScanForm() {
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://example.com"
           required
-          className="w-full px-4 py-3 bg-slate-950/80 border border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white placeholder-slate-500 transition-all"
+          className="w-full px-4 py-3 bg-white dark:bg-slate-950/80 border border-slate-205 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 transition-all shadow-sm"
         />
       </div>
 
       {/* Advanced Settings Toggle */}
       {ENABLE_AUTHENTICATED_SCANS && (
-      <div className="border border-slate-800/80 rounded-xl bg-slate-950/40 overflow-hidden transition-all">
+      <div className="border border-slate-205 dark:border-slate-800/80 rounded-xl bg-white dark:bg-slate-950/40 overflow-hidden transition-all shadow-sm">
         <button
           type="button"
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="w-full px-4 py-3 flex items-center justify-between text-xs font-semibold text-slate-400 uppercase tracking-wider hover:bg-slate-900/40 active:bg-slate-900/60 transition-all"
+          className="w-full px-4 py-3 flex items-center justify-between text-xs font-semibold text-slate-550 dark:text-slate-400 uppercase tracking-wider hover:bg-slate-50 dark:hover:bg-slate-900/40 active:bg-slate-105 dark:active:bg-slate-900/60 transition-all"
         >
           <span className="flex items-center gap-2">
-            <Lock className="h-3.5 w-3.5 text-indigo-400" />
+            <Lock className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400" />
             Advanced Authentication (Optional)
           </span>
           {showAdvanced ? (
-            <ChevronUp className="h-4 w-4 text-slate-400" />
+            <ChevronUp className="h-4 w-4 text-slate-500 dark:text-slate-400" />
           ) : (
-            <ChevronDown className="h-4 w-4 text-slate-400" />
+            <ChevronDown className="h-4 w-4 text-slate-500 dark:text-slate-400" />
           )}
         </button>
         {showAdvanced && (
-          <div className="p-4 border-t border-slate-800/80 space-y-4 bg-slate-950/20">
+          <div className="p-4 border-t border-slate-205 dark:border-slate-800/80 space-y-4 bg-slate-50 dark:bg-slate-950/20">
             <div>
-              <label htmlFor="authCookie" className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+              <label htmlFor="authCookie" className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
                 Session Cookie
               </label>
               <input
@@ -352,14 +407,14 @@ export default function ScanForm() {
                 value={authCookie}
                 onChange={(e) => setAuthCookie(e.target.value)}
                 placeholder="PHPSESSID=abcdef123456...; security=low"
-                className="w-full px-3 py-2 bg-slate-950/90 border border-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm text-white placeholder-slate-600 transition-all"
+                className="w-full px-3 py-2 bg-white dark:bg-slate-950/90 border border-slate-205 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 transition-all"
               />
               <p className="text-[10px] text-slate-500 mt-1">
                 Used to bypass authentication paywalls. Format as `Name=Value; Name2=Value2`.
               </p>
             </div>
             <div>
-              <label htmlFor="authHeader" className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+              <label htmlFor="authHeader" className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
                 Authorization Header
               </label>
               <input
@@ -368,7 +423,7 @@ export default function ScanForm() {
                 value={authHeader}
                 onChange={(e) => setAuthHeader(e.target.value)}
                 placeholder="Bearer eyJhbGciOiJIUzI1Ni..."
-                className="w-full px-3 py-2 bg-slate-950/90 border border-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm text-white placeholder-slate-600 transition-all"
+                className="w-full px-3 py-2 bg-white dark:bg-slate-950/90 border border-slate-205 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 transition-all"
               />
               <p className="text-[10px] text-slate-500 mt-1">
                 Custom Authorization or token header injected into every outbound request.
@@ -376,7 +431,7 @@ export default function ScanForm() {
             </div>
             {ENABLE_ACTIVE_SCANS && (
             <div>
-              <label htmlFor="delay" className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+              <label htmlFor="delay" className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
                 Scan Rate Throttling: {delay} ms
               </label>
               <input
@@ -387,7 +442,7 @@ export default function ScanForm() {
                 step="100"
                 value={delay}
                 onChange={(e) => setDelay(parseInt(e.target.value, 10))}
-                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
               />
               <p className="text-[10px] text-slate-500 mt-1">
                 Introduces a request delay between active form inputs probes. Higher values reduce target server load and bypass active rate-limit blocklists.
@@ -401,16 +456,16 @@ export default function ScanForm() {
 
       {/* Consent Checkbox (only show for full scan) */}
       {mode === 'full' && (ENABLE_ACTIVE_SCANS || ENABLE_ZAP_SCANS || ENABLE_LOAD_TESTING) && (
-        <div className="flex items-start gap-3 p-3 bg-slate-950/30 border border-slate-800/40 rounded-xl">
+        <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-800/40 rounded-xl">
           <input
             id="consent"
             type="checkbox"
             checked={consent}
             onChange={(e) => setConsent(e.target.checked)}
             required
-            className="w-4 h-4 text-indigo-600 border-slate-700 rounded bg-slate-900 focus:ring-indigo-500 mt-1 cursor-pointer"
+            className="w-4 h-4 text-indigo-600 border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900 focus:ring-indigo-500 mt-1 cursor-pointer"
           />
-          <label htmlFor="consent" className="text-xs text-slate-400 leading-normal cursor-pointer select-none">
+          <label htmlFor="consent" className="text-xs text-slate-500 dark:text-slate-400 leading-normal cursor-pointer select-none">
             I certify that I am authorized to scan this target domain. Unauthorized scanning may violate computer trespass regulations.
           </label>
         </div>
@@ -418,23 +473,23 @@ export default function ScanForm() {
 
       {/* Deep Security Scan (OWASP ZAP) Checkbox */}
       {mode === 'full' && ENABLE_ZAP_SCANS && (
-        <div className="flex items-start gap-3 p-3 bg-slate-950/30 border border-slate-800/40 rounded-xl mt-3">
+        <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-800/40 rounded-xl mt-3">
           <input
             id="useZap"
             type="checkbox"
             checked={useZap}
             onChange={(e) => setUseZap(e.target.checked)}
-            className="w-4 h-4 text-indigo-600 border-slate-700 rounded bg-slate-900 focus:ring-indigo-500 mt-1 cursor-pointer"
+            className="w-4 h-4 text-indigo-600 border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900 focus:ring-indigo-500 mt-1 cursor-pointer"
           />
-          <label htmlFor="useZap" className="text-xs text-slate-400 leading-normal cursor-pointer select-none">
-            <span className="font-semibold text-slate-200 block mb-0.5">Deep Security Scan (OWASP ZAP)</span>
+          <label htmlFor="useZap" className="text-xs text-slate-500 dark:text-slate-400 leading-normal cursor-pointer select-none">
+            <span className="font-semibold text-slate-800 dark:text-slate-200 block mb-0.5">Deep Security Scan (OWASP ZAP)</span>
             Enables active vulnerability injection probes, target endpoint spidering, and passive analysis using OWASP ZAP container.
           </label>
         </div>
       )}
 
       {error && (
-        <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-lg text-sm text-center">
+        <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 rounded-lg text-sm text-center">
           {error}
         </div>
       )}

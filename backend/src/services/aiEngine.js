@@ -447,4 +447,146 @@ function auditOutdatedLibraries(html) {
   return findings;
 }
 
-module.exports = { generateRecommendations, analyzeSecurityWithAI, detectTechnologies, auditOutdatedLibraries };
+/**
+ * Interactively chat with an AI assistant scoped strictly to a specific vulnerability finding.
+ */
+async function chatWithFindingAssistant(finding, messages = []) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+
+  if (!apiKey) {
+    const query = lastUserMsg.toLowerCase();
+    
+    if (query.includes('risk') || query.includes('attack') || query.includes('impact') || query.includes('exploit')) {
+      return `### 💡 Real-World Attack Risk: ${finding.title}
+
+**Exploitation Risk**: ${finding.severity ? finding.severity.toUpperCase() : 'MEDIUM'} Risk (${finding.owasp || 'Security Vulnerability'})
+
+Without proper protection for **${finding.title}**, attackers can perform unauthorized actions such as cross-site script execution, session hijacking, or traffic manipulation depending on the vulnerability type.
+
+**Impact**:
+- **Data Exposure**: Sensitive headers, cookies, or user tokens may be compromised.
+- **Compliance Violation**: May fail PCI-DSS, GDPR, or HIPAA audit requirements.
+
+*(Offline Mode — Set \`OPENAI_API_KEY\` in backend \`.env\` for live multi-turn AI responses)*`;
+    }
+
+    if (query.includes('next') || query.includes('react')) {
+      return `### 💻 Next.js / React Remediation Guide: ${finding.title}
+
+To fix **${finding.title}** in Next.js, add or update headers in \`next.config.js\`:
+
+\`\`\`javascript
+// next.config.js
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: '${finding.title.includes('CSP') || finding.title.includes('Content-Security') ? 'Content-Security-Policy' : finding.title.includes('Frame') || finding.title.includes('Clickjacking') ? 'X-Frame-Options' : finding.title.includes('HSTS') ? 'Strict-Transport-Security' : 'X-Content-Type-Options'}',
+            value: '${finding.remediation.includes('DENY') ? 'DENY' : 'default-src \'self\'; script-src \'self\';'}'
+          }
+        ]
+      }
+    ];
+  }
+};
+\`\`\`
+
+*(Offline Mode — Set \`OPENAI_API_KEY\` in backend \`.env\` for custom framework code generation)*`;
+    }
+
+    if (query.includes('nginx') || query.includes('express') || query.includes('apache') || query.includes('config')) {
+      return `### 🛡️ Server Remediation Snippet: ${finding.title}
+
+**NGINX Config**:
+\`\`\`nginx
+# /etc/nginx/conf.d/security.conf
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+\`\`\`
+
+**Express.js Config**:
+\`\`\`javascript
+const helmet = require('helmet');
+app.use(helmet()); // Automatically sets recommended security headers
+\`\`\`
+
+*(Offline Mode — Set \`OPENAI_API_KEY\` in backend \`.env\` for live custom server configs)*`;
+    }
+
+    if (query.includes('test') || query.includes('verify') || query.includes('check')) {
+      return `### 🧪 How to Verify & Test the Fix: ${finding.title}
+
+1. **cURL Command**:
+   \`\`\`bash
+   curl -I https://yourdomain.com
+   \`\`\`
+2. **Inspect Response Headers**: Look for the presence of the header or security setting in the HTTP response headers output.
+3. **Re-scan**: Re-run the VAPT scanner from your dashboard to verify the score improvement!
+
+*(Offline Mode — Set \`OPENAI_API_KEY\` in backend \`.env\` for interactive testing advice)*`;
+    }
+
+    return `### 🛡️ Security Guidance: ${finding.title}
+
+**Issue Summary**: ${finding.description || 'Security configuration issue detected.'}
+
+**Recommended Action**: ${finding.remediation || 'Apply standard security header or configuration updates as outlined in OWASP guidelines.'}
+
+*(Offline Mode: Set \`OPENAI_API_KEY\` in backend \`.env\` to enable live custom AI chat)*`;
+  }
+
+  try {
+    const { default: axios } = await import('axios');
+
+    // Keep only last 4 messages to preserve low token consumption
+    const recentHistory = (messages || []).slice(-4).map(m => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: String(m.content || '').slice(0, 300) // cap user message to 300 chars
+    }));
+
+    const systemPrompt = `You are a focused, expert Application Security Engineer. You are assisting a developer in understanding and fixing ONE specific vulnerability finding:
+
+Vulnerability: ${finding.title || 'Security Issue'}
+Category: ${finding.category || 'Security'}
+OWASP Category: ${finding.owasp || 'N/A'}
+Severity: ${finding.severity || 'Medium'}
+Description: ${finding.description || ''}
+Default Remediation: ${finding.remediation || ''}
+
+STRICT GUARDRAIL RULES:
+1. You MUST ONLY answer questions directly related to this specific vulnerability, its real-world exploitation risk, attack scenarios, or code/server config fixes.
+2. If the user asks off-topic questions (e.g. general programming, unrelated code, essays, recipes, weather, general chat), politely refuse in 1 sentence and redirect them back to fixing this vulnerability.
+3. Keep responses concise (under 250 words), actionable, and developer-friendly. Use code snippets (NGINX, Apache, Express, Next.js, etc.) when asked for code.`;
+
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...recentHistory
+        ],
+        max_tokens: 350,
+        temperature: 0.3
+      },
+      {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        timeout: 12000
+      }
+    );
+
+    const reply = response.data?.choices?.[0]?.message?.content;
+    return reply ? reply.trim() : "I'm sorry, I couldn't generate a response. Please try asking again.";
+  } catch (err) {
+    console.error('[aiEngine] Chat assistant error:', err.message);
+    return `### Security Guidance for: ${finding.title}\n\n**Remediation Suggestion**: ${finding.remediation}\n\n*(AI Chat service temporarily unavailable: ${err.message})*`;
+  }
+}
+
+module.exports = { generateRecommendations, analyzeSecurityWithAI, detectTechnologies, auditOutdatedLibraries, chatWithFindingAssistant };
+

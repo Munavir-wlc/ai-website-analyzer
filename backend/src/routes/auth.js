@@ -120,7 +120,7 @@ router.get('/history', protect, async (req, res) => {
   try {
     // Find all scans belonging to this user, sorted by creation date descending
     const scans = await Scan.find({ userId: req.user._id })
-      .select('scanId url score grade scanMode createdAt')
+      .select('scanId url score grade scanMode createdAt report')
       .sort({ createdAt: -1 });
 
     res.json(scans);

@@ -194,6 +194,9 @@ function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled
     report.wafData = securityResult.wafData || report.wafData;
     report.apiDiscoveryData = securityResult.apiDiscoveryData || report.apiDiscoveryData;
     report.headersGrade = securityResult.headersGrade || report.headersGrade;
+    report.authCookie = securityResult.authCookie || '';
+    report.authHeader = securityResult.authHeader || '';
+    report.crawledPages = securityResult.crawledPages || [];
 
     // Parse SSL details
     if (securityResult.sslData) {

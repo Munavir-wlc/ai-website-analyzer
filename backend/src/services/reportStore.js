@@ -20,6 +20,40 @@ async function saveReport(scanId, report, userId = null) {
     const expiresAt = userId ? null : new Date(Date.now() + REPORT_TTL_MS);
     const scannedUrl = report.scannedUrl || report.url || '';
 
+    // Find the previous completed scan for the same URL and owner (user or guest)
+    let fixedFindings = [];
+    let previousScanDetails = null;
+    try {
+      const previousScan = await Scan.findOne({
+        url: scannedUrl,
+        userId: userId || null,
+        scanId: { $ne: scanId }
+      }).sort({ createdAt: -1 });
+
+      if (previousScan && previousScan.report) {
+        const prevFindings = previousScan.report.findings || [];
+        const currFindings = report.findings || [];
+        const currIds = new Set(currFindings.map(f => String(f.id || '')));
+
+        // Identify findings that existed in the previous scan but are missing in the current scan
+        fixedFindings = prevFindings.filter(f => f.id && !currIds.has(String(f.id)));
+        
+        previousScanDetails = {
+          scanId: previousScan.scanId,
+          score: previousScan.score || previousScan.report.score || 0,
+          grade: previousScan.grade || previousScan.report.grade || 'F',
+          findingsCount: prevFindings.length,
+          scanDate: previousScan.createdAt || previousScan.report.scanDate
+        };
+      }
+    } catch (dbErr) {
+      console.error(`[reportStore] Error comparing report ${scanId} with previous scan:`, dbErr);
+    }
+
+    // Attach fixed findings details directly to the report object
+    report.fixedFindings = fixedFindings;
+    report.previousScanDetails = previousScanDetails;
+
     await Scan.findOneAndUpdate(
       { scanId },
       {

@@ -1,12 +1,22 @@
-// Load .env from backend root (index.js is in src/, so .env is one level up)
+// Load .env configuration from backend root (index.js is in src/)
+// Triggering server watch reload to apply ZAP replacer rules check and Puppeteer screenshot auth.
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
 // Security: ensure critical secrets are present in production
-const JWT_SECRET = process.env.JWT_SECRET;
 if (process.env.NODE_ENV === 'production') {
+  const JWT_SECRET = process.env.JWT_SECRET;
   if (!JWT_SECRET || JWT_SECRET === 'vapt_scanner_jwt_secret_token_key_2026_xyz') {
     console.error('[Startup] Missing or insecure JWT_SECRET in production environment. Aborting.');
     process.exit(1);
+  }
+
+  const { capabilities } = require('./config/scanCapabilities');
+  if (capabilities.zapScans) {
+    const ZAP_API_KEY = process.env.ZAP_API_KEY;
+    if (!ZAP_API_KEY || ZAP_API_KEY.trim() === '') {
+      console.error('[Startup] Missing ZAP_API_KEY in production when ENABLE_ZAP_SCANS is enabled. Aborting.');
+      process.exit(1);
+    }
   }
 }
 
@@ -24,6 +34,8 @@ const scanRoutes = require('./routes/scan');
 const screenshotRoutes = require('./routes/screenshot');
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
+const { setIo } = require('./utils/socket');
+const { initScanWorker } = require('./services/scanWorker');
 
 // Connect to MongoDB
 connectDB();
@@ -38,7 +50,14 @@ const server = http.createServer(app);
 // Configure allowed origins depending on environment
 const allowedOrigins = (process.env.NODE_ENV === 'production')
   ? [process.env.FRONTEND_URL]
-  : [process.env.FRONTEND_URL || 'http://localhost:3000', 'http://127.0.0.1:3000'];
+  : [
+      process.env.FRONTEND_URL || 'http://localhost:3000', 
+      'http://127.0.0.1:3000',
+      'http://localhost:3001',
+      'http://127.0.0.1:3001',
+      'http://localhost:3002',
+      'http://127.0.0.1:3002'
+    ];
 
 const io = new Server(server, {
   cors: {
@@ -50,10 +69,60 @@ const io = new Server(server, {
 
 // Store io instance in Express app setting
 app.set('io', io);
+setIo(io);
+
+// Initialize background scan queue worker
+initScanWorker();
+
+// In production, trust proxy headers from the load balancer/reverse proxy
+if (process.env.NODE_ENV === 'production') {
+  app.enable('trust proxy');
+  app.use((req, res, next) => {
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    if (proto && proto.toLowerCase() !== 'https') {
+      const host = req.headers.host;
+      return res.redirect(301, `https://${host}${req.originalUrl}`);
+    }
+    return next();
+  });
+}
 
 // CORS - allow frontend origin
-// Security headers
-app.use(helmet());
+// Security headers: configure helmet with a strong default CSP and other headers
+// Build connect-src for CSP from allowed origins
+const cspConnect = ["'self'"];
+allowedOrigins.forEach((o) => {
+  if (o && !cspConnect.includes(o)) cspConnect.push(o);
+});
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: cspConnect,
+      frameAncestors: ["'self'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      upgradeInsecureRequests: []
+    }
+  },
+  frameguard: { action: 'sameorigin' },
+  hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  // keep other helmet defaults
+}));
+
+// Additional headers which some helmet versions don't set via options
+app.use((req, res, next) => {
+  // Permissions-Policy (formerly Feature-Policy) - restrict powerful features
+  res.setHeader('Permissions-Policy', "geolocation=(), microphone=(), camera=(), payment=()");
+  // Ensure Referrer-Policy is present for older environments
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 app.use(cors({
   origin: allowedOrigins,

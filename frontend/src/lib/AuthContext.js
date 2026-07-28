@@ -65,7 +65,13 @@ export function AuthProvider({ children }) {
       localStorage.setItem('vapt_auth_token', data.token);
       setToken(data.token);
       setUser(data.user);
-      router.push('/');
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const scanId = urlParams ? urlParams.get('scanId') : null;
+      if (scanId) {
+        router.push(`/results?scanId=${scanId}&claimed=true`);
+      } else {
+        router.push('/');
+      }
       return { success: true };
     } catch (err) {
       setError(err.message);
@@ -93,7 +99,13 @@ export function AuthProvider({ children }) {
       localStorage.setItem('vapt_auth_token', data.token);
       setToken(data.token);
       setUser(data.user);
-      router.push('/');
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const scanId = urlParams ? urlParams.get('scanId') : null;
+      if (scanId) {
+        router.push(`/results?scanId=${scanId}&claimed=true`);
+      } else {
+        router.push('/');
+      }
       return { success: true };
     } catch (err) {
       setError(err.message);
@@ -105,6 +117,10 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     localStorage.removeItem('vapt_auth_token');
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('scanResult');
+      sessionStorage.removeItem('rescanUrl');
+    }
     setToken(null);
     setUser(null);
     router.push('/');

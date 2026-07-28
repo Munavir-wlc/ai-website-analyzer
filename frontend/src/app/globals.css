@@ -22,13 +22,156 @@
     --radius: 1rem;
   }
 
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 7%;
+    --card-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+  }
+
   * {
     @apply border-border;
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-foreground antialiased transition-colors duration-300;
   }
+}
+
+/* AI Chat Assistant Drawer & Overlay Protection */
+.finding-chat-modal-overlay {
+  background-color: rgba(15, 23, 42, 0.35) !important;
+}
+
+.finding-chat-modal-drawer {
+  background-color: #090d16 !important;
+  color: #f8fafc !important;
+}
+
+.finding-chat-modal-drawer [class*="bg-slate-"] {
+  background-color: #020617 !important;
+  border-color: #1e293b !important;
+}
+
+.finding-chat-modal-drawer .bg-slate-900 {
+  background-color: #0f172a !important;
+  border-color: #1e293b !important;
+}
+
+.finding-chat-modal-drawer .text-white,
+.finding-chat-modal-drawer .text-slate-100,
+.finding-chat-modal-drawer .text-slate-200 {
+  color: #ffffff !important;
+}
+
+.finding-chat-modal-drawer .text-slate-300,
+.finding-chat-modal-drawer .text-slate-350,
+.finding-chat-modal-drawer .text-slate-400 {
+  color: #cbd5e1 !important;
+}
+
+.finding-chat-modal-drawer input {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #1e293b !important;
+}
+
+/* Light mode overrides for Audit Report */
+html:not(.dark) .audit-report-wrap {
+  color: #0f172a !important;
+}
+
+html:not(.dark) .audit-report-wrap [class*="bg-slate-9"] {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+
+html:not(.dark) .audit-report-wrap .text-white,
+html:not(.dark) .audit-report-wrap .text-slate-100,
+html:not(.dark) .audit-report-wrap .text-slate-200,
+html:not(.dark) .audit-report-wrap .text-slate-300 {
+  color: #0f172a !important;
+}
+
+html:not(.dark) .audit-report-wrap .text-slate-400,
+html:not(.dark) .audit-report-wrap .text-slate-500 {
+  color: #475569 !important;
+}
+
+html:not(.dark) .audit-report-wrap .border-slate-800,
+html:not(.dark) .audit-report-wrap .border-slate-700,
+html:not(.dark) .audit-report-wrap .border-slate-900,
+html:not(.dark) .audit-report-wrap .border-slate-850 {
+  border-color: #e2e8f0 !important;
+}
+
+html:not(.dark) .audit-report-wrap [class*="hover:text-white"]:hover,
+html:not(.dark) .audit-report-wrap [class*="hover:text-slate-200"]:hover,
+html:not(.dark) .audit-report-wrap [class*="hover:text-slate-300"]:hover {
+  color: #1e1b4b !important;
+}
+
+html:not(.dark) .audit-report-wrap [class*="bg-indigo-600"],
+html:not(.dark) .audit-report-wrap .bg-indigo-700,
+html:not(.dark) .audit-report-wrap .bg-gradient-to-r {
+  color: #ffffff !important;
+}
+
+html:not(.dark) .audit-report-wrap [class*="bg-indigo-600"] *,
+html:not(.dark) .audit-report-wrap .bg-gradient-to-r * {
+  color: #ffffff !important;
+}
+
+html:not(.dark) .audit-report-wrap [class*="hover:bg-slate-800"]:hover,
+html:not(.dark) .audit-report-wrap [class*="hover:bg-slate-850"]:hover,
+html:not(.dark) .audit-report-wrap [class*="hover:bg-slate-900"]:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) .audit-report-wrap input,
+html:not(.dark) .audit-report-wrap select {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html:not(.dark) .audit-report-wrap input::placeholder {
+  color: #94a3b8 !important;
+}
+
+html:not(.dark) .audit-report-wrap .bg-slate-800 {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) .audit-report-wrap .text-indigo-400 {
+  color: #4f46e5 !important;
+}
+
+html:not(.dark) .audit-report-wrap .text-slate-305,
+html:not(.dark) .audit-report-wrap .text-slate-350 {
+  color: #1e293b !important;
+}
+
+html:not(.dark) .audit-report-wrap strong.text-white {
+  color: #0f172a !important;
+}
+
+html:not(.dark) .audit-report-wrap tr:hover {
+  background-color: #f8fafc !important;
 }
 
 @media print {

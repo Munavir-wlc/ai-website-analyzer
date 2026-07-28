@@ -194,11 +194,13 @@ async function captureScreenshots(url, authOptions = {}) {
     // Apply authorization details if passed
     const { authCookie, authHeader } = authOptions;
     if (authHeader) {
+      console.log(`[screenshotService] Injected Authorization Header into Puppeteer: ${authHeader.substring(0, 15)}...[REDACTED]`);
       await page.setExtraHTTPHeaders({
         'Authorization': authHeader
       });
     }
     if (authCookie) {
+      console.log(`[screenshotService] Injected Cookies into Puppeteer: ${authCookie.substring(0, 15)}...[REDACTED]`);
       const cookieParts = authCookie.split(';');
       for (const part of cookieParts) {
         const eqIdx = part.indexOf('=');
@@ -220,11 +222,59 @@ async function captureScreenshots(url, authOptions = {}) {
       // === DESKTOP CAPTURE ===
       console.log('📱 Capturing desktop view...');
       await page.setViewport(DESKTOP_VIEWPORT);
-      
-      // Inject load detection script before navigation
+
+      // If we have auth credentials, do a 2-step navigation:
+      // 1. Navigate to domain root to establish browser context
+      // 2. Set cookies with full flags (path, secure, domain)
+      // 3. Reload so the session is applied from the start
+      const { authCookie: cookieStr, authHeader: headerStr } = authOptions;
+      if (cookieStr) {
+        console.log('[screenshotService] Pre-navigating to domain to set cookies correctly...');
+        const targetOrigin = new URL(url).origin;
+        try {
+          await page.goto(targetOrigin, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        } catch (_) {}
+
+        // Now set cookies with proper attributes after domain is loaded
+        const cookieParts = cookieStr.split(';');
+        for (const part of cookieParts) {
+          const eqIdx = part.indexOf('=');
+          if (eqIdx !== -1) {
+            const name = part.substring(0, eqIdx).trim();
+            const value = part.substring(eqIdx + 1).trim();
+            try {
+              await page.setCookie({
+                name,
+                value,
+                domain: new URL(url).hostname,
+                path: '/',
+                httpOnly: false,
+                secure: url.startsWith('https'),
+                sameSite: 'Lax'
+              });
+              console.log(`[screenshotService] Cookie set: ${name}=...`);
+            } catch (e) {
+              console.warn(`[screenshotService] Failed to set cookie ${name}:`, e.message);
+            }
+          }
+        }
+
+        // Inject localStorage keys to support Next.js/React SPA auth state hydration
+        try {
+          await page.evaluate(() => {
+            localStorage.setItem('hasAuthSession', 'true');
+          });
+          console.log('[screenshotService] Injected localStorage hasAuthSession = "true"');
+        } catch (e) {
+          console.warn('[screenshotService] Failed to set localStorage hasAuthSession:', e.message);
+        }
+      }
+
+
+      // Inject load detection script before main navigation
       await page.evaluateOnNewDocument(PAGE_LOAD_SCRIPT);
       
-      // Navigate with networkidle2
+      // Navigate to the actual target URL (with cookies already in browser jar)
       try {
         await page.goto(url, { 
           waitUntil: 'networkidle2', 

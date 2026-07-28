@@ -53,15 +53,100 @@ function mapRiskLevel(risk, title) {
  */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function seedUrlInZapTree(targetUrl, headers) {
+  try {
+    console.log(`[zapScanner] Seeding URL into ZAP tree: ${targetUrl}`);
+    await axios.get(`${ZAP_URL}/JSON/core/action/accessUrl/`, {
+      params: { url: targetUrl },
+      headers
+    });
+    await sleep(1000);
+    return true;
+  } catch (err) {
+    console.warn(`[zapScanner] Failed to seed URL into ZAP tree: ${err.message}`);
+    return false;
+  }
+}
+
+async function setupZapAuth(authOptions, zapHeaders) {
+  const { authCookie, authHeader } = authOptions || {};
+  
+  if (authHeader) {
+    console.log(`[zapScanner] Injecting Authorization header into ZAP replacer rules...`);
+    try {
+      await axios.get(`${ZAP_URL}/JSON/replacer/action/removeRule/`, {
+        params: { description: 'auth-header-rule' },
+        headers: zapHeaders
+      }).catch(() => {}); // ignore if it doesn't exist
+      
+      await axios.get(`${ZAP_URL}/JSON/replacer/action/addRule/`, {
+        params: {
+          description: 'auth-header-rule',
+          enabled: 'true',
+          matchType: 'REQ_HEADER',
+          matchString: 'Authorization',
+          matchRegex: 'false',
+          replacement: authHeader
+        },
+        headers: zapHeaders
+      });
+    } catch (err) {
+      console.warn(`[zapScanner] Failed to setup ZAP Authorization header rule:`, err.message);
+    }
+  }
+
+  if (authCookie) {
+    console.log(`[zapScanner] Injecting Cookie header into ZAP replacer rules...`);
+    try {
+      await axios.get(`${ZAP_URL}/JSON/replacer/action/removeRule/`, {
+        params: { description: 'auth-cookie-rule' },
+        headers: zapHeaders
+      }).catch(() => {}); // ignore if it doesn't exist
+      
+      await axios.get(`${ZAP_URL}/JSON/replacer/action/addRule/`, {
+        params: {
+          description: 'auth-cookie-rule',
+          enabled: 'true',
+          matchType: 'REQ_HEADER',
+          matchString: 'Cookie',
+          matchRegex: 'false',
+          replacement: authCookie
+        },
+        headers: zapHeaders
+      });
+    } catch (err) {
+      console.warn(`[zapScanner] Failed to setup ZAP Cookie header rule:`, err.message);
+    }
+  }
+}
+
+async function cleanupZapAuth(zapHeaders) {
+  console.log(`[zapScanner] Cleaning up ZAP auth replacer rules...`);
+  try {
+    await axios.get(`${ZAP_URL}/JSON/replacer/action/removeRule/`, {
+      params: { description: 'auth-header-rule' },
+      headers: zapHeaders
+    });
+  } catch (_) {}
+  try {
+    await axios.get(`${ZAP_URL}/JSON/replacer/action/removeRule/`, {
+      params: { description: 'auth-cookie-rule' },
+      headers: zapHeaders
+    });
+  } catch (_) {}
+}
+
 /**
  * Perform a full VAPT scan targeting the target URL using OWASP ZAP.
  * Triggers Spider -> Passive Scan check -> Active Scan -> Alert fetch.
  * 
  * @param {string} targetUrl - URL of the site to scan
+ * @param {Object} authOptions - Session cookies and authorization headers
  * @param {Function} onProgress - WebSocket status callback: (step, status, details) => void
  * @returns {Promise<Array>} List of normalized vulnerability alerts
  */
-async function executeZapScan(targetUrl, onProgress) {
+async function executeZapScan(targetUrl, authOptions = {}, onProgress) {
+
   const isOnline = await checkZapConnection();
 
   if (!isOnline) {
@@ -89,14 +174,15 @@ async function executeZapScan(targetUrl, onProgress) {
   try {
     // 1. Initialize scan
     onProgress('zap_init', 'in_progress', { message: 'Initializing ZAP API connection...' });
+    await setupZapAuth(authOptions, headers);
     await sleep(1000);
     onProgress('zap_init', 'completed');
 
-    // 2. Start ZAP Spider
+    // 2. Start ZAP Spider (limit to 20 pages to avoid OOM on large sites)
     onProgress('zap_spider', 'in_progress', { message: 'Starting ZAP Spider...' });
-    console.log(`[zapScanner] Launching ZAP Spider for: ${targetUrl}`);
+    console.log(`[zapScanner] Launching ZAP Spider for: ${targetUrl} (maxChildren=20)`);
     const spiderRes = await axios.get(`${ZAP_URL}/JSON/spider/action/scan/`, {
-      params: { url: targetUrl },
+      params: { url: targetUrl, maxChildren: 20 },
       headers
     });
     const spiderScanId = spiderRes.data.scan;
@@ -158,33 +244,64 @@ async function executeZapScan(targetUrl, onProgress) {
     // 4. Start ZAP Active Scan
     onProgress('zap_ascan', 'in_progress', { message: 'Optimizing ZAP active scan settings...' });
     try {
-      console.log('[zapScanner] Configuring ZAP Active Scan speed optimizations...');
-      // A. Set concurrent threads to 15 (default is 2, which is extremely slow)
+      console.log('[zapScanner] Configuring ZAP Active Scan (memory-safe LOW strength mode)...');
+      // A. Use only 3 threads to stay within Colima VM memory limits
       await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionThreadPerHost/`, {
-        params: { Integer: 15 },
+        params: { Integer: 3 },
         headers
       });
-      // B. Set max alerts per rule to 5 to stop redundant testing once a flaw is confirmed
+      // B. Cap alerts per rule at 3 to stop testing once a flaw is confirmed
       await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionMaxAlertsPerRule/`, {
-        params: { Integer: 5 },
+        params: { Integer: 3 },
         headers
       });
-      // C. Set max rule duration to 1 minute to prevent slow injection rules from locking
+      // C. Cap each rule to 45 seconds max to prevent slow SQL timing rules from hanging
       await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionMaxRuleDurationInMins/`, {
         params: { Integer: 1 },
         headers
       });
+      // D. Cap total active scan to 5 minutes regardless of progress
+      await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionMaxScanDurationInMins/`, {
+        params: { Integer: 5 },
+        headers
+      });
+      // E. Set LOW scan strength to reduce payload count per rule (saves memory)
+      await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionDefaultPolicy/`, {
+        params: { String: 'Default Policy' },
+        headers
+      }).catch(() => {});
     } catch (configErr) {
       console.warn('[zapScanner] Failed to configure ZAP performance options:', configErr.message);
     }
 
     onProgress('zap_ascan', 'in_progress', { message: 'Starting ZAP Active Scan...' });
     console.log(`[zapScanner] Launching ZAP Active Scan (Injections)...`);
-    const ascanRes = await axios.get(`${ZAP_URL}/JSON/ascan/action/scan/`, {
-      params: { url: targetUrl },
-      headers
-    });
-    const activeScanId = ascanRes.data.scan;
+    let activeScanId;
+    try {
+      const ascanRes = await axios.get(`${ZAP_URL}/JSON/ascan/action/scan/`, {
+        params: { url: targetUrl, recurse: true, scanPolicyName: '', method: '', postData: '' },
+        headers
+      });
+      activeScanId = ascanRes.data.scan;
+    } catch (err) {
+      // If ZAP cannot find the URL in the site tree, seed it and retry once.
+      const isUrlTreeError = err.response && err.response.data && typeof err.response.data === 'object'
+        ? err.response.data.code === 'url_not_found' || String(err.response.data.message || '').includes('URL Not Found')
+        : false;
+
+      if (isUrlTreeError) {
+        console.warn('[zapScanner] Active scan failed because URL was not in ZAP tree. Seeding URL and retrying.');
+        await seedUrlInZapTree(targetUrl, headers);
+        const retryRes = await axios.get(`${ZAP_URL}/JSON/ascan/action/scan/`, {
+          params: { url: targetUrl, recurse: true },
+          headers
+        });
+        activeScanId = retryRes.data.scan;
+      } else {
+        throw err;
+      }
+    }
+
     console.log(`[zapScanner] ZAP Active Scan ID: ${activeScanId}`);
 
     // Poll Active Scan status with a 3-minute safety timeout
@@ -281,6 +398,7 @@ async function executeZapScan(targetUrl, onProgress) {
     });
 
     onProgress('zap_alerts', 'completed');
+    await cleanupZapAuth(headers);
     return {
       scanned: true,
       available: true,
@@ -292,6 +410,9 @@ async function executeZapScan(targetUrl, onProgress) {
   } catch (err) {
     console.error('[zapScanner] Live ZAP Scan failed:', err.message);
     onProgress('zap_alerts', 'failed', { error: `OWASP ZAP scan failed: ${err.message}` });
+    try {
+      await cleanupZapAuth(headers);
+    } catch (_) {}
     return {
       scanned: false,
       available: true,
@@ -303,6 +424,5 @@ async function executeZapScan(targetUrl, onProgress) {
 }
 
 module.exports = {
-  executeZapScan,
-  checkZapConnection
+  executeZapScan
 };

@@ -30,6 +30,12 @@ async function crawl(url, auth = {}) {
       headers['Cookie'] = auth.authCookie;
     }
 
+    // Mask headers for secure logging
+    const masked = { ...headers };
+    if (masked['Authorization']) masked['Authorization'] = masked['Authorization'].substring(0, 15) + '...[REDACTED]';
+    if (masked['Cookie']) masked['Cookie'] = masked['Cookie'].substring(0, 15) + '...[REDACTED]';
+    console.log(`[crawler] Crawling URL: ${normalizedUrl} with headers:`, masked);
+
     const response = await axios({
       url: normalizedUrl,
       method: 'GET',
@@ -39,6 +45,7 @@ async function crawl(url, auth = {}) {
       headers
     });
 
+    console.log(`[crawler] Crawl success. URL: ${normalizedUrl}, Status: ${response.status}`);
     const html = typeof response.data === 'string' ? response.data : '';
     const finalUrl = response.request?.res?.responseUrl || response.config?.url || normalizedUrl;
     const $ = cheerio.load(html);
@@ -54,6 +61,11 @@ async function crawl(url, auth = {}) {
     };
   } catch (err) {
     console.error(`[crawler] Crawl failed for ${normalizedUrl}: ${err.message}`);
+    if (err.response) {
+      console.error(`[crawler] Error Response Status: ${err.response.status}`);
+      console.error(`[crawler] Error Response Headers:`, JSON.stringify(err.response.headers, null, 2));
+      console.error(`[crawler] Error Response Body Preview:`, String(err.response.data || '').substring(0, 300));
+    }
     return null;
   }
 }

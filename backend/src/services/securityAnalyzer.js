@@ -735,7 +735,9 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
     robotsData,
     wafData,
     apiDiscoveryData,
-    headersGrade
+    headersGrade,
+    authCookie: crawlerResult.authCookie || '',
+    authHeader: crawlerResult.authHeader || ''
   };
 }
 
