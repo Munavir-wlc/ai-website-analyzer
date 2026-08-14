@@ -18,6 +18,7 @@ export default function ScanForm() {
   const [consent, setConsent] = useState(false);
   const [mode, setMode] = useState('full'); // 'quick' or 'full'
   const [useZap, setUseZap] = useState(true);
+  const [zapScanMode, setZapScanMode] = useState('low');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   
@@ -112,7 +113,8 @@ export default function ScanForm() {
             authCookie: ENABLE_AUTHENTICATED_SCANS ? authCookie.trim() : '',
             authHeader: ENABLE_AUTHENTICATED_SCANS ? authHeader.trim() : '',
             delay: ENABLE_ACTIVE_SCANS ? delay : 0,
-            useZap: ENABLE_ZAP_SCANS && useZap
+            useZap: ENABLE_ZAP_SCANS && useZap,
+            zapScanMode: ENABLE_ZAP_SCANS && useZap ? zapScanMode : 'low'
           }),
         });
         
@@ -473,18 +475,43 @@ export default function ScanForm() {
 
       {/* Deep Security Scan (OWASP ZAP) Checkbox */}
       {mode === 'full' && ENABLE_ZAP_SCANS && (
-        <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-800/40 rounded-xl mt-3">
-          <input
-            id="useZap"
-            type="checkbox"
-            checked={useZap}
-            onChange={(e) => setUseZap(e.target.checked)}
-            className="w-4 h-4 text-indigo-600 border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900 focus:ring-indigo-500 mt-1 cursor-pointer"
-          />
-          <label htmlFor="useZap" className="text-xs text-slate-500 dark:text-slate-400 leading-normal cursor-pointer select-none">
-            <span className="font-semibold text-slate-800 dark:text-slate-200 block mb-0.5">Deep Security Scan (OWASP ZAP)</span>
-            Enables active vulnerability injection probes, target endpoint spidering, and passive analysis using OWASP ZAP container.
-          </label>
+        <div className="space-y-3">
+          <div className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-800/40 rounded-xl">
+            <input
+              id="useZap"
+              type="checkbox"
+              checked={useZap}
+              onChange={(e) => setUseZap(e.target.checked)}
+              className="w-4 h-4 text-indigo-600 border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900 focus:ring-indigo-500 mt-1 cursor-pointer"
+            />
+            <label htmlFor="useZap" className="text-xs text-slate-500 dark:text-slate-400 leading-normal cursor-pointer select-none">
+              <span className="font-semibold text-slate-800 dark:text-slate-200 block mb-0.5">Deep Security Scan (OWASP ZAP)</span>
+              Enables active vulnerability injection probes, target endpoint spidering, and passive analysis using OWASP ZAP container.
+            </label>
+          </div>
+
+          {useZap && (
+            <div className="flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-950/30 border border-slate-200 dark:border-slate-800/40 rounded-xl">
+              <label htmlFor="zapScanMode" className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                ZAP Scan Intensity
+              </label>
+              <select
+                id="zapScanMode"
+                value={zapScanMode}
+                onChange={(e) => setZapScanMode(e.target.value)}
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 dark:text-white transition-all shadow-sm cursor-pointer"
+              >
+                <option value="low">Quick / Minimal (Low Memory & Fast)</option>
+                <option value="medium">Balanced (Standard Auditing)</option>
+                <option value="high">Deep / Full (Thorough Injection Payloads)</option>
+              </select>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-normal">
+                {zapScanMode === 'low' && "Runs a quick scan with minimal payloads and 20-page spider limit. Best for slow/large sites and low-resource VMs."}
+                {zapScanMode === 'medium' && "Runs a standard audit with moderate payloads, 100-page spider limit, and 15-minute maximum active scan duration."}
+                {zapScanMode === 'high' && "⚠️ Runs a thorough scan with high-intensity payloads, 500-page spider limit, and 30-minute maximum duration. Requires more Docker VM RAM."}
+              </p>
+            </div>
+          )}
         </div>
       )}
 

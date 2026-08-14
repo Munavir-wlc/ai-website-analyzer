@@ -12,6 +12,32 @@ const generateToken = (id) => {
   });
 };
 
+// Helper to set HttpOnly Cookie and return response
+const sendTokenResponse = (user, statusCode, res) => {
+  const token = generateToken(user._id);
+
+  const cookieOptions = {
+    expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax', // Allow top-level cross-site navigation
+    path: '/'
+  };
+
+  res
+    .status(statusCode)
+    .cookie('token', token, cookieOptions)
+    .json({
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        createdAt: user.createdAt
+      },
+      token
+    });
+};
+
 // @route   POST /api/auth/register
 // @desc    Register a new user
 // @access  Public
@@ -37,15 +63,7 @@ router.post('/register', async (req, res) => {
     });
 
     if (user) {
-      res.status(201).json({
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          createdAt: user.createdAt
-        },
-        token: generateToken(user._id)
-      });
+      sendTokenResponse(user, 201, res);
     } else {
       res.status(400).json({ error: 'Invalid user data provided' });
     }
@@ -81,19 +99,23 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    res.json({
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        createdAt: user.createdAt
-      },
-      token: generateToken(user._id)
-    });
+    sendTokenResponse(user, 200, res);
   } catch (error) {
     console.error('[Login Router Error]:', error);
     res.status(500).json({ error: 'Login failed. Please try again.' });
   }
+});
+
+// @route   POST /api/auth/logout
+// @desc    Clear authentication cookie
+// @access  Public
+router.post('/logout', (req, res) => {
+  res.cookie('token', 'none', {
+    expires: new Date(Date.now() + 5 * 1000),
+    httpOnly: true,
+    path: '/'
+  });
+  res.status(200).json({ success: true, message: 'Logged out successfully' });
 });
 
 // @route   GET /api/auth/me

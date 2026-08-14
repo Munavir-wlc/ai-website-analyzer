@@ -26,6 +26,7 @@ if (typeof globalThis.File === 'undefined') {
 }
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const http = require('http');
@@ -137,6 +138,7 @@ const scanLimiter = rateLimit({
   message: { error: 'Too many scan requests. Please try again later.' }
 });
 
+app.use(cookieParser());
 app.use(express.json());
 
 // Health check
@@ -166,9 +168,12 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Backend running at http://localhost:${PORT} (Node version: ${process.version})`);
-});
-// Trigger watch reload to pick up all active scan capabilities
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(PORT, () => {
+    console.log(`Backend running at http://localhost:${PORT} (Node version: ${process.version})`);
+  });
+}
+
+module.exports = app;
 
 

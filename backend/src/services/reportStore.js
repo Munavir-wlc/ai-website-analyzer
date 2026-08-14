@@ -20,15 +20,26 @@ async function saveReport(scanId, report, userId = null) {
     const expiresAt = userId ? null : new Date(Date.now() + REPORT_TTL_MS);
     const scannedUrl = report.scannedUrl || report.url || '';
 
-    // Find the previous completed scan for the same URL and owner (user or guest)
+    // Find the previous completed scan of equivalent capability level for comparison
     let fixedFindings = [];
     let previousScanDetails = null;
     try {
-      const previousScan = await Scan.findOne({
+      const isZapScanned = !!(report.zapScanData && report.zapScanData.scanned);
+      
+      const query = {
         url: scannedUrl,
         userId: userId || null,
         scanId: { $ne: scanId }
-      }).sort({ createdAt: -1 });
+      };
+
+      if (isZapScanned) {
+        query['report.zapScanData.scanned'] = true;
+      } else {
+        query['report.zapScanData.scanned'] = { $ne: true };
+        query.scanMode = report.scanMode || 'quick';
+      }
+
+      const previousScan = await Scan.findOne(query).sort({ createdAt: -1 });
 
       if (previousScan && previousScan.report) {
         const prevFindings = previousScan.report.findings || [];

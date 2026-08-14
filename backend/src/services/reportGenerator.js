@@ -313,4 +313,4 @@ function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled
   return report;
 }
 
-module.exports = { generateReport };
+module.exports = { generateReport, normalizeFinding };

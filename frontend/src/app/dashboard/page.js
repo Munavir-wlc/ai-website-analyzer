@@ -20,6 +20,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedDomain, setSelectedDomain] = useState('all');
+  const [selectedScanMode, setSelectedScanMode] = useState('all');
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -76,10 +77,18 @@ export default function DashboardPage() {
     domainColorMap.set(d, DOMAIN_COLORS[idx % DOMAIN_COLORS.length]);
   });
 
-  // Filtered score history based on selected domain
+  // Filtered score history based on selected domain and scan mode
   const filteredScoreHistory = (selectedDomain === 'all'
     ? (scoreHistory || [])
-    : (scoreHistory || []).filter(s => s.domain === selectedDomain)).map(item => ({
+    : (scoreHistory || []).filter(s => s.domain === selectedDomain))
+    .filter(s => {
+      if (selectedScanMode === 'all') return true;
+      if (selectedScanMode === 'quick') return s.scanMode === 'quick';
+      if (selectedScanMode === 'full') return s.scanMode === 'full' && !s.zapScanned;
+      if (selectedScanMode === 'zap') return !!s.zapScanned;
+      return true;
+    })
+    .map(item => ({
       ...item,
       color: domainColorMap.get(item.domain) || '#6366f1'
     }));
@@ -228,19 +237,36 @@ export default function DashboardPage() {
                 </p>
               </div>
 
-              {/* Per-Website Filter Dropdown */}
-              <div className="flex items-center gap-2 shrink-0">
-                <Filter className="h-3.5 w-3.5 text-slate-400" />
-                <select
-                  value={selectedDomain}
-                  onChange={(e) => setSelectedDomain(e.target.value)}
-                  className="bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors"
-                >
-                  <option value="all">🌐 All Websites ({availableDomains.length})</option>
-                  {availableDomains.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+              {/* Filter Dropdowns Container */}
+              <div className="flex items-center gap-3 shrink-0 flex-wrap">
+                {/* Per-Website Filter Dropdown */}
+                <div className="flex items-center gap-2">
+                  <Filter className="h-3.5 w-3.5 text-slate-400" />
+                  <select
+                    value={selectedDomain}
+                    onChange={(e) => setSelectedDomain(e.target.value)}
+                    className="bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+                  >
+                    <option value="all">🌐 All Websites ({availableDomains.length})</option>
+                    {availableDomains.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Scan Depth Filter Dropdown */}
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedScanMode}
+                    onChange={(e) => setSelectedScanMode(e.target.value)}
+                    className="bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+                  >
+                    <option value="all">📊 All Scan Depths</option>
+                    <option value="quick">Quick Passive Only</option>
+                    <option value="full">Full Deterministic Only</option>
+                    <option value="zap">Deep ZAP Scan Only</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -278,6 +304,9 @@ export default function DashboardPage() {
                               </div>
                               <div className="text-slate-400 font-mono text-[11px]">{data.date}</div>
                               <div className="text-indigo-400 font-bold font-mono">Score: {data.score} / 100 (Grade {getScoreGrade(data.score)})</div>
+                              {data.scanDepth && (
+                                <div className="text-slate-400 font-mono text-[10px] uppercase mt-0.5">Depth: {data.scanDepth}</div>
+                              )}
                             </div>
                           );
                         }

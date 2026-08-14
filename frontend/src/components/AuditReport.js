@@ -443,8 +443,16 @@ export default function AuditReport({ result, screenshots }) {
             onClick={() => window.print()} 
             className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold border-transparent shadow-lg shadow-indigo-500/20 flex items-center gap-2 py-2 px-4 rounded-xl text-xs transition-all hover:scale-[1.02]"
           >
-            <Download className="h-4 w-4" /> Export Executive PDF
+            <Printer className="h-4 w-4" /> Print / Save PDF
           </Button>
+          <a
+            href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/scan/results/${result.scanId || scanId}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold border-transparent shadow-lg shadow-emerald-500/20 flex items-center gap-2 py-2 px-4 rounded-xl text-xs transition-all hover:scale-[1.02]"
+          >
+            <Download className="h-4 w-4" /> Server Download PDF
+          </a>
           <Button 
             variant="outline" 
             onClick={handleExportJSON} 
@@ -490,8 +498,12 @@ export default function AuditReport({ result, screenshots }) {
               </div>
               <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
                 <span className="block text-[10px] text-slate-500 mb-0.5">Scan Depth</span>
-                <span className="text-white text-[11px] normal-case">
-                  {result.scanMode === 'quick' ? 'Quick Passive' : zapScan.scanned ? 'Full + ZAP' : 'Full Deterministic'}
+                <span className="text-white text-[11px] normal-case font-bold">
+                  {result.scanMode === 'quick'
+                    ? 'Quick Passive'
+                    : zapScan.scanned
+                      ? `Full + ZAP (${result.scanStatus?.zapScanMode ? result.scanStatus.zapScanMode.toUpperCase() : 'LOW'})`
+                      : 'Full Deterministic'}
                 </span>
               </div>
               <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">

@@ -16,11 +16,13 @@ export async function runScan(url, scanType) {
   const res = await fetch(`${API_BASE}/api/scan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({
       url,
       consent: true,
       mode: scanConfig.mode,
-      useZap: scanConfig.useZap
+      useZap: scanConfig.useZap,
+      zapScanMode: 'low'
     }),
   });
 

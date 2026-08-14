@@ -145,7 +145,7 @@ async function cleanupZapAuth(zapHeaders) {
  * @param {Function} onProgress - WebSocket status callback: (step, status, details) => void
  * @returns {Promise<Array>} List of normalized vulnerability alerts
  */
-async function executeZapScan(targetUrl, authOptions = {}, onProgress) {
+async function executeZapScan(targetUrl, authOptions = {}, onProgress, intensity = 'low') {
 
   const isOnline = await checkZapConnection();
 
@@ -169,7 +169,43 @@ async function executeZapScan(targetUrl, authOptions = {}, onProgress) {
   }
 
   const headers = ZAP_API_KEY ? { 'X-ZAP-API-Key': ZAP_API_KEY } : {};
-  console.log(`[zapScanner] Starting live OWASP ZAP scan for target: ${targetUrl}`);
+  console.log(`[zapScanner] Starting live OWASP ZAP scan (intensity: ${intensity}) for target: ${targetUrl}`);
+
+  // Define intensity configuration profiles
+  const intensityProfiles = {
+    low: {
+      maxChildren: 20,
+      maxSpiderTime: 2 * 60 * 1000,
+      threadsPerHost: 3,
+      maxAlertsPerRule: 3,
+      maxRuleDurationMins: 1,
+      maxScanDurationMins: 5,
+      ascanTimeout: 5 * 60 * 1000,
+      attackStrength: 'LOW'
+    },
+    medium: {
+      maxChildren: 100,
+      maxSpiderTime: 5 * 60 * 1000,
+      threadsPerHost: 5,
+      maxAlertsPerRule: 10,
+      maxRuleDurationMins: 3,
+      maxScanDurationMins: 15,
+      ascanTimeout: 15 * 60 * 1000,
+      attackStrength: 'MEDIUM'
+    },
+    high: {
+      maxChildren: 500,
+      maxSpiderTime: 10 * 60 * 1000,
+      threadsPerHost: 8,
+      maxAlertsPerRule: 0, // unlimited
+      maxRuleDurationMins: 5,
+      maxScanDurationMins: 30,
+      ascanTimeout: 30 * 60 * 1000,
+      attackStrength: 'HIGH'
+    }
+  };
+
+  const profile = intensityProfiles[intensity.toLowerCase()] || intensityProfiles.low;
 
   try {
     // 1. Initialize scan
@@ -178,20 +214,19 @@ async function executeZapScan(targetUrl, authOptions = {}, onProgress) {
     await sleep(1000);
     onProgress('zap_init', 'completed');
 
-    // 2. Start ZAP Spider (limit to 20 pages to avoid OOM on large sites)
+    // 2. Start ZAP Spider
     onProgress('zap_spider', 'in_progress', { message: 'Starting ZAP Spider...' });
-    console.log(`[zapScanner] Launching ZAP Spider for: ${targetUrl} (maxChildren=20)`);
+    console.log(`[zapScanner] Launching ZAP Spider for: ${targetUrl} (maxChildren=${profile.maxChildren})`);
     const spiderRes = await axios.get(`${ZAP_URL}/JSON/spider/action/scan/`, {
-      params: { url: targetUrl, maxChildren: 20 },
+      params: { url: targetUrl, maxChildren: profile.maxChildren },
       headers
     });
     const spiderScanId = spiderRes.data.scan;
     console.log(`[zapScanner] ZAP Spider scan ID: ${spiderScanId}`);
     
-    // Poll ZAP Spider status with a 2-minute safety timeout
+    // Poll ZAP Spider status with profile-specific safety timeout
     let spiderCompleted = false;
     const spiderStartTime = Date.now();
-    const MAX_SPIDER_TIME = 2 * 60 * 1000; // 2 minutes max
     
     while (!spiderCompleted) {
       const statusRes = await axios.get(`${ZAP_URL}/JSON/spider/view/status/`, {
@@ -204,8 +239,8 @@ async function executeZapScan(targetUrl, authOptions = {}, onProgress) {
       
       if (progress >= 100) {
         spiderCompleted = true;
-      } else if (Date.now() - spiderStartTime > MAX_SPIDER_TIME) {
-        console.warn('[zapScanner] Spider exceeded 2-minute time limit. Stopping ZAP spider...');
+      } else if (Date.now() - spiderStartTime > profile.maxSpiderTime) {
+        console.warn(`[zapScanner] Spider exceeded safety timeout (${profile.maxSpiderTime / 1000}s). Stopping spider...`);
         try {
           await axios.get(`${ZAP_URL}/JSON/spider/action/stop/`, {
             params: { scanId: spiderScanId },
@@ -244,30 +279,35 @@ async function executeZapScan(targetUrl, authOptions = {}, onProgress) {
     // 4. Start ZAP Active Scan
     onProgress('zap_ascan', 'in_progress', { message: 'Optimizing ZAP active scan settings...' });
     try {
-      console.log('[zapScanner] Configuring ZAP Active Scan (memory-safe LOW strength mode)...');
-      // A. Use only 3 threads to stay within Colima VM memory limits
+      console.log(`[zapScanner] Configuring ZAP Active Scan (intensity: ${intensity.toUpperCase()})...`);
+      // A. Concurrent threads limits
       await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionThreadPerHost/`, {
-        params: { Integer: 3 },
+        params: { Integer: profile.threadsPerHost },
         headers
       });
-      // B. Cap alerts per rule at 3 to stop testing once a flaw is confirmed
+      // B. Alerts limit per rule
       await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionMaxAlertsPerRule/`, {
-        params: { Integer: 3 },
+        params: { Integer: profile.maxAlertsPerRule },
         headers
       });
-      // C. Cap each rule to 45 seconds max to prevent slow SQL timing rules from hanging
+      // C. Max rule duration
       await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionMaxRuleDurationInMins/`, {
-        params: { Integer: 1 },
+        params: { Integer: profile.maxRuleDurationMins },
         headers
       });
-      // D. Cap total active scan to 5 minutes regardless of progress
+      // D. Max total active scan duration
       await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionMaxScanDurationInMins/`, {
-        params: { Integer: 5 },
+        params: { Integer: profile.maxScanDurationMins },
         headers
       });
-      // E. Set LOW scan strength to reduce payload count per rule (saves memory)
+      // E. Set Default Scan Policy Name
       await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionDefaultPolicy/`, {
         params: { String: 'Default Policy' },
+        headers
+      }).catch(() => {});
+      // F. Configure Attack Strength dynamically
+      await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionAttackStrength/`, {
+        params: { String: profile.attackStrength },
         headers
       }).catch(() => {});
     } catch (configErr) {
@@ -304,10 +344,9 @@ async function executeZapScan(targetUrl, authOptions = {}, onProgress) {
 
     console.log(`[zapScanner] ZAP Active Scan ID: ${activeScanId}`);
 
-    // Poll Active Scan status with a 3-minute safety timeout
+    // Poll Active Scan status with safety timeout from profile
     let ascanCompleted = false;
     const ascanStartTime = Date.now();
-    const MAX_ASCAN_TIME = 3 * 60 * 1000; // 3 minutes max
     
     while (!ascanCompleted) {
       const statusRes = await axios.get(`${ZAP_URL}/JSON/ascan/view/status/`, {
@@ -320,8 +359,8 @@ async function executeZapScan(targetUrl, authOptions = {}, onProgress) {
       
       if (progress >= 100) {
         ascanCompleted = true;
-      } else if (Date.now() - ascanStartTime > MAX_ASCAN_TIME) {
-        console.warn('[zapScanner] Active Scan exceeded 3-minute time limit. Stopping ZAP active scan...');
+      } else if (Date.now() - ascanStartTime > profile.ascanTimeout) {
+        console.warn(`[zapScanner] Active Scan exceeded timeout (${profile.ascanTimeout / 1000}s). Stopping scan...`);
         onProgress('zap_ascan', 'in_progress', { message: 'Max time limit reached. Finalizing current findings...' });
         try {
           await axios.get(`${ZAP_URL}/JSON/ascan/action/stop/`, {

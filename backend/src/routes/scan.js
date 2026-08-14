@@ -15,6 +15,7 @@ const { optionalAuth, protect } = require('../middleware/auth');
 const { scanCdnLibraries } = require('../services/cveScanner');
 const { scanSubdomains } = require('../services/subdomainScanner');
 const { addScanJob } = require('../services/scanQueue');
+const { generateReportPDF } = require('../services/pdfGenerator');
 
 function buildFinalReport(scanId, report, scanStatus = {}) {
   return {
@@ -222,12 +223,23 @@ router.get('/analytics', protect, async (req, res) => {
     const avgScore = Math.round(scores.reduce((a, b) => a + b, 0) / totalScans);
 
     // Score history chronologically
-    const scoreHistory = userScans.slice(0, 20).reverse().map(s => ({
-      scanId: s.scanId,
-      date: new Date(s.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      score: s.score || 0,
-      domain: extractDomainFromScan(s)
-    }));
+    const scoreHistory = userScans.slice(0, 20).reverse().map(s => {
+      const zapScanned = !!(s.report?.zapScanData?.scanned);
+      const scanDepth = s.scanMode === 'quick' 
+        ? 'Quick' 
+        : (zapScanned 
+          ? `Full + ZAP (${(s.report?.scanStatus?.zapScanMode || 'low').toUpperCase()})` 
+          : 'Full');
+      return {
+        scanId: s.scanId,
+        date: new Date(s.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        score: s.score || 0,
+        domain: extractDomainFromScan(s),
+        scanMode: s.scanMode || 'quick',
+        zapScanned,
+        scanDepth
+      };
+    });
 
     // Aggregate Risk Breakdown & Finding Statuses
     const riskBreakdown = { critical: 0, high: 0, medium: 0, low: 0 };
@@ -309,8 +321,13 @@ router.get('/compare', protect, async (req, res) => {
     const resolved = [];
     const newFindings = [];
     const persistent = [];
+    const unverified = [];
 
-    // Find resolved and persistent
+    // Determine target scan capabilities
+    const targetHasZap = !!(targetScan.report?.zapScanData?.scanned);
+    const targetHasActive = targetScan.scanMode === 'full';
+
+    // Find resolved, persistent, and unverified
     baseFindings.forEach(f => {
       if (targetMap.has(f.title)) {
         persistent.push({
@@ -321,12 +338,30 @@ router.get('/compare', protect, async (req, res) => {
           targetDescription: targetMap.get(f.title).description
         });
       } else {
-        resolved.push({
-          title: f.title,
-          severity: f.severity,
-          category: f.category,
-          description: f.description
-        });
+        const normalized = reportGenerator.normalizeFinding(f);
+        const isZapFinding = normalized.source === 'owasp-zap';
+        const isActiveFinding = normalized.source === 'active-probe';
+
+        let tested = true;
+        if (isZapFinding && !targetHasZap) tested = false;
+        if (isActiveFinding && !targetHasActive) tested = false;
+
+        if (tested) {
+          resolved.push({
+            title: f.title,
+            severity: f.severity,
+            category: f.category,
+            description: f.description
+          });
+        } else {
+          unverified.push({
+            title: f.title,
+            severity: f.severity,
+            category: f.category,
+            description: f.description,
+            reason: isZapFinding ? 'Not tested (Requires ZAP Scan)' : 'Not tested (Requires Full Scan)'
+          });
+        }
       }
     });
 
@@ -367,7 +402,8 @@ router.get('/compare', protect, async (req, res) => {
       diff: {
         resolved,
         new: newFindings,
-        persistent
+        persistent,
+        unverified
       }
     });
   } catch (err) {
@@ -400,9 +436,12 @@ router.post('/', optionalAuth, async (req, res) => {
   const scanId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
   
   try {
-    let { url, consent, mode, socketId, authCookie, authHeader, delay, useZap } = req.body;
+    let { url, consent, mode, socketId, authCookie, authHeader, delay, useZap, zapScanMode } = req.body;
     if (!url) {
       return res.status(400).json({ error: 'url is required' });
+    }
+    if (!consent) {
+      return res.status(400).json({ error: 'User consent is required before performing security scans.' });
     }
 
     const hasConsent = !!consent;
@@ -452,6 +491,7 @@ router.post('/', optionalAuth, async (req, res) => {
         shouldRunActive,
         shouldRunLoadTest,
         shouldRunZap,
+        zapScanMode: zapScanMode || 'low',
         runAi,
         socketId,
         delay: throttleDelay,
@@ -726,6 +766,26 @@ router.post('/results/:scanId/share', protect, async (req, res) => {
   } catch (err) {
     console.error('[scanRoutes] Failed to toggle scan sharing:', err);
     res.status(500).json({ error: 'Failed to share scan.' });
+  }
+});
+
+// GET /api/scan/results/:scanId/pdf or /api/scan/:scanId/pdf
+router.get(['/results/:scanId/pdf', '/:scanId/pdf'], optionalAuth, async (req, res) => {
+  const { scanId } = req.params;
+  try {
+    const reportData = await getReport(scanId);
+    if (!reportData) {
+      return res.status(404).json({ error: 'Scan report not found' });
+    }
+
+    const pdfBuffer = await generateReportPDF(reportData);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=security-report-${scanId}.pdf`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('[scanRoutes] Failed to generate PDF report:', err);
+    res.status(500).json({ error: 'Failed to generate PDF report.' });
   }
 });
 

@@ -325,7 +325,30 @@ function ComparePageContent() {
                 </div>
               )}
 
-              {diff.resolved.length === 0 && diff.new.length === 0 && diff.persistent.length === 0 && (
+              {/* Unverified List */}
+              {diff.unverified && diff.unverified.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-base font-bold text-amber-700 dark:text-amber-400 flex items-center gap-2">
+                    <ShieldAlert className="h-5 w-5" /> ⚠️ Unverified Baseline Findings ({diff.unverified.length})
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    These baseline vulnerabilities were not tested during the recent scan because the scan depth or capabilities did not include active testing (e.g. ZAP was skipped, or active crawling was disabled).
+                  </p>
+                  <div className="space-y-2">
+                    {diff.unverified.map((item, idx) => (
+                      <div key={idx} className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-slate-900 dark:text-white text-sm">{item.title}</span>
+                          <span className="text-[10px] font-mono font-bold text-amber-700 dark:text-amber-300 bg-amber-500/20 px-2.5 py-0.5 rounded uppercase">{item.reason || 'NOT TESTED'}</span>
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-400">{item.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {diff.resolved.length === 0 && diff.new.length === 0 && diff.persistent.length === 0 && (!diff.unverified || diff.unverified.length === 0) && (
                 <div className="p-8 text-center text-xs text-slate-500">
                   No vulnerability differences detected between the two selected scans.
                 </div>
