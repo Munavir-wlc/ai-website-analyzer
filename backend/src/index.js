@@ -35,6 +35,8 @@ const scanRoutes = require('./routes/scan');
 const screenshotRoutes = require('./routes/screenshot');
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
+const teamRoutes = require('./routes/team');
+const paymentRoutes = require('./routes/payment');
 const { setIo } = require('./utils/socket');
 const { initScanWorker } = require('./services/scanWorker');
 
@@ -151,6 +153,12 @@ app.use('/api/scan', scanLimiter, scanRoutes);
 
 // Auth API
 app.use('/api/auth', authRoutes);
+
+// Team Workspaces API
+app.use('/api/team', teamRoutes);
+
+// Payments & Subscriptions API
+app.use('/api/payment', paymentRoutes);
 
 // Screenshot API - 5 per minute (Puppeteer is heavy)
 const screenshotLimiter = rateLimit({

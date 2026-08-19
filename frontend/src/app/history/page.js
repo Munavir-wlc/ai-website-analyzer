@@ -4,22 +4,26 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../lib/AuthContext';
+import { useWorkspace } from '../../lib/WorkspaceContext';
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import { Button } from '../../components/ui/Button';
 import { 
   Shield, Eye, Calendar, ExternalLink, RefreshCw, AlertCircle, Search, 
   Globe, ChevronDown, ChevronUp, ArrowUpRight, CheckCircle2, TrendingUp, 
-  TrendingDown, History, ShieldAlert, Award 
+  TrendingDown, History, ShieldAlert, Award, FolderOutput, Check
 } from 'lucide-react';
 
 export default function HistoryPage() {
   const { user, token, loading: authLoading } = useAuth();
+  const { workspaces } = useWorkspace();
   const [scans, setScans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [expandedProjects, setExpandedProjects] = useState({});
+  const [openMoveMenuId, setOpenMoveMenuId] = useState(null);
+  const [movingScanId, setMovingScanId] = useState(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -33,6 +37,29 @@ export default function HistoryPage() {
       fetchScanHistory();
     }
   }, [token]);
+
+  const handleMoveScan = async (scanId, targetWorkspaceId) => {
+    try {
+      setMovingScanId(scanId);
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      const res = await fetch(`${API_BASE}/api/team/move-scan/${scanId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ targetWorkspaceId })
+      });
+      if (res.ok) {
+        setOpenMoveMenuId(null);
+        fetchScanHistory();
+      }
+    } catch (err) {
+      console.error('Failed to move scan:', err);
+    } finally {
+      setMovingScanId(null);
+    }
+  };
 
   const fetchScanHistory = async () => {
     setLoading(true);
@@ -398,6 +425,42 @@ export default function HistoryPage() {
                                      >
                                        View <Eye className="h-3 w-3" />
                                      </Link>
+
+                                     {/* Move to Workspace Dropdown */}
+                                     {workspaces.length > 0 && (
+                                       <div className="relative">
+                                         <button
+                                           type="button"
+                                           onClick={() => setOpenMoveMenuId(openMoveMenuId === scan.scanId ? null : scan.scanId)}
+                                           disabled={movingScanId === scan.scanId}
+                                           className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 inline-flex items-center gap-1 border border-indigo-500/20 hover:bg-indigo-500/10 px-2.5 py-1 rounded-lg transition-colors"
+                                         >
+                                           <FolderOutput className="h-3 w-3" />
+                                           {movingScanId === scan.scanId ? 'Moving...' : 'Move to Workspace'}
+                                         </button>
+
+                                         {openMoveMenuId === scan.scanId && (
+                                           <>
+                                             <div className="fixed inset-0 z-10" onClick={() => setOpenMoveMenuId(null)} />
+                                             <div className="absolute right-0 mt-1 w-52 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-1.5 z-20 space-y-1">
+                                               <div className="px-2.5 py-1 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                                                 Transfer to Workspace
+                                               </div>
+                                               {workspaces.map((w) => (
+                                                 <button
+                                                   key={w._id}
+                                                   onClick={() => handleMoveScan(scan.scanId, w._id)}
+                                                   className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 truncate"
+                                                 >
+                                                   <Globe className="h-3 w-3 text-purple-500 shrink-0" />
+                                                   <span className="truncate">{w.name}</span>
+                                                 </button>
+                                               ))}
+                                             </div>
+                                           </>
+                                         )}
+                                       </div>
+                                     )}
                                    </div>
                                  </div>
                                </div>

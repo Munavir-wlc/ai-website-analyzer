@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { io } from 'socket.io-client';
 import { CheckCircle2, Loader2, Circle, AlertCircle, ShieldCheck, ChevronDown, ChevronUp, Lock } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
+import { useWorkspace } from '../lib/WorkspaceContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const ENABLE_ACTIVE_SCANS = process.env.NEXT_PUBLIC_ENABLE_ACTIVE_SCANS === 'true';
@@ -14,6 +15,8 @@ const ENABLE_AUTHENTICATED_SCANS = process.env.NEXT_PUBLIC_ENABLE_AUTHENTICATED_
 const ENABLE_AI_FINDINGS = process.env.NEXT_PUBLIC_ENABLE_AI_FINDINGS === 'true';
 
 export default function ScanForm() {
+  const { token } = useAuth();
+  const { activeWorkspace, workspaces } = useWorkspace();
   const [url, setUrl] = useState('');
   const [consent, setConsent] = useState(false);
   const [mode, setMode] = useState('full'); // 'quick' or 'full'
@@ -22,6 +25,7 @@ export default function ScanForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   
+  const [selectedWorkspace, setSelectedWorkspace] = useState(activeWorkspace?.id || 'personal');
   const [currentStepId, setCurrentStepId] = useState(null);
   const [authCookie, setAuthCookie] = useState('');
   const [authHeader, setAuthHeader] = useState('');
@@ -47,7 +51,12 @@ export default function ScanForm() {
 
   const socketRef = useRef(null);
   const router = useRouter();
-  const { token } = useAuth();
+
+  useEffect(() => {
+    if (activeWorkspace?.id) {
+      setSelectedWorkspace(activeWorkspace.id);
+    }
+  }, [activeWorkspace]);
 
   // Cleanup socket on unmount
   useEffect(() => {
@@ -114,7 +123,8 @@ export default function ScanForm() {
             authHeader: ENABLE_AUTHENTICATED_SCANS ? authHeader.trim() : '',
             delay: ENABLE_ACTIVE_SCANS ? delay : 0,
             useZap: ENABLE_ZAP_SCANS && useZap,
-            zapScanMode: ENABLE_ZAP_SCANS && useZap ? zapScanMode : 'low'
+            zapScanMode: ENABLE_ZAP_SCANS && useZap ? zapScanMode : 'low',
+            teamId: selectedWorkspace === 'personal' ? null : selectedWorkspace
           }),
         });
         
@@ -362,6 +372,28 @@ export default function ScanForm() {
           </button>
         </div>
       </div>
+
+      {/* Target Workspace Selector (If logged in with workspaces) */}
+      {workspaces.length > 0 && (
+        <div className="space-y-1.5">
+          <label htmlFor="workspaceSelect" className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+            Target Workspace (Personal vs Team)
+          </label>
+          <select
+            id="workspaceSelect"
+            value={selectedWorkspace}
+            onChange={(e) => setSelectedWorkspace(e.target.value)}
+            className="w-full px-4 py-2.5 bg-white dark:bg-slate-950/80 border border-slate-205 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-semibold text-slate-900 dark:text-white transition-all shadow-sm"
+          >
+            <option value="personal">👤 Personal Workspace (Private Scan)</option>
+            {workspaces.map((w) => (
+              <option key={w._id} value={w._id}>
+                🏢 {w.name} (Shared Team Workspace)
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Target URL */}
       <div>

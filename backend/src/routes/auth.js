@@ -140,8 +140,11 @@ router.get('/me', protect, async (req, res) => {
 // @access  Private
 router.get('/history', protect, async (req, res) => {
   try {
-    // Find all scans belonging to this user, sorted by creation date descending
-    const scans = await Scan.find({ userId: req.user._id })
+    // Find personal scans belonging strictly to this user (excluding team workspace scans)
+    const scans = await Scan.find({
+      userId: req.user._id,
+      $or: [{ teamId: null }, { teamId: { $exists: false } }]
+    })
       .select('scanId url score grade scanMode createdAt report')
       .sort({ createdAt: -1 });
 
@@ -149,6 +152,93 @@ router.get('/history', protect, async (req, res) => {
   } catch (error) {
     console.error('[Get History Error]:', error);
     res.status(500).json({ error: 'Failed to retrieve scan history' });
+  }
+});
+
+const crypto = require('crypto');
+const { sendPasswordResetEmail } = require('../services/emailService');
+
+// @route   POST /api/auth/forgot-password
+// @desc    Generate password reset token and send email
+// @access  Public
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  try {
+    if (!email) {
+      return res.status(400).json({ error: 'Please enter your registered email address' });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    if (!user) {
+      // Return 200 for security so attackers cannot enumerate valid user emails
+      return res.json({
+        success: true,
+        message: 'If an account exists with that email, password reset instructions have been sent.'
+      });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    user.resetPasswordExpires = Date.now() + 60 * 60 * 1000; // 1 hour
+
+    await user.save();
+
+    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+
+    const emailResult = await sendPasswordResetEmail({
+      toEmail: user.email,
+      userName: user.name,
+      resetLink
+    });
+
+    res.json({
+      success: true,
+      message: 'Password reset instructions have been sent to your email address.',
+      emailSent: emailResult.success,
+      previewUrl: emailResult.previewUrl || null,
+      resetToken
+    });
+  } catch (error) {
+    console.error('[Forgot Password Error]:', error);
+    res.status(500).json({ error: 'Failed to process password reset request' });
+  }
+});
+
+// @route   POST /api/auth/reset-password/:token
+// @desc    Reset password using valid reset token
+// @access  Public
+router.post('/reset-password/:token', async (req, res) => {
+  const { token } = req.params;
+  const { password } = req.body;
+
+  try {
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: 'Password reset token is invalid or has expired.' });
+    }
+
+    // Set new password
+    user.password = password;
+    user.resetPasswordToken = null;
+    user.resetPasswordExpires = null;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Password reset successful. You can now log in with your new password.'
+    });
+  } catch (error) {
+    console.error('[Reset Password Error]:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
   }
 });
 

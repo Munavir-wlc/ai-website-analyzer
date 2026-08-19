@@ -11,10 +11,13 @@ import {
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Legend } from 'recharts';
 
+import { useWorkspace } from '../../lib/WorkspaceContext';
+
 const DOMAIN_COLORS = ['#6366f1', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#06b6d4', '#f43f5e'];
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
+  const { activeWorkspace } = useWorkspace();
   const router = useRouter();
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -29,16 +32,17 @@ export default function DashboardPage() {
     }
 
     if (user) {
-      fetchAnalytics();
+      fetchAnalytics(activeWorkspace?.id || 'personal');
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, activeWorkspace]);
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = async (wsId = 'personal') => {
     try {
+      setLoading(true);
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
       const token = localStorage.getItem('vapt_auth_token');
 
-      const res = await fetch(`${API_URL}/api/scan/analytics`, {
+      const res = await fetch(`${API_URL}/api/scan/analytics?teamId=${wsId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -133,7 +137,7 @@ export default function DashboardPage() {
           <div className="relative z-10 space-y-1">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 font-mono tracking-wider">
-                Portfolio Command Center
+                Portfolio Command Center • {activeWorkspace?.name || 'Personal Workspace'}
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">

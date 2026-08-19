@@ -23,6 +23,39 @@ const UserSchema = new mongoose.Schema({
     required: [true, 'Password is required'],
     minlength: [6, 'Password must be at least 6 characters']
   },
+  plan: {
+    type: String,
+    enum: ['free', 'pro', 'team'],
+    default: 'free'
+  },
+  stripeCustomerId: {
+    type: String,
+    default: null
+  },
+  stripeSubscriptionId: {
+    type: String,
+    default: null
+  },
+  subscriptionStatus: {
+    type: String,
+    default: 'active'
+  },
+  scansCountThisMonth: {
+    type: Number,
+    default: 0
+  },
+  quotaResetDate: {
+    type: Date,
+    default: Date.now
+  },
+  resetPasswordToken: {
+    type: String,
+    default: null
+  },
+  resetPasswordExpires: {
+    type: Date,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now

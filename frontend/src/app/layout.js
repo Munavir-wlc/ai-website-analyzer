@@ -2,6 +2,7 @@ import './globals.css';
 import { Inter } from 'next/font/google';
 import { AuthProvider } from '../lib/AuthContext';
 import { ThemeProvider } from '../lib/ThemeContext';
+import { WorkspaceProvider } from '../lib/WorkspaceContext';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -16,7 +17,9 @@ export default function RootLayout({ children }) {
       <body className="antialiased font-sans bg-background text-foreground transition-colors duration-300">
         <ThemeProvider>
           <AuthProvider>
-            {children}
+            <WorkspaceProvider>
+              {children}
+            </WorkspaceProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

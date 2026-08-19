@@ -13,6 +13,12 @@ const ScanSchema = new mongoose.Schema({
     index: true,
     default: null
   },
+  teamId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Team',
+    index: true,
+    default: null
+  },
   url: {
     type: String,
     required: true

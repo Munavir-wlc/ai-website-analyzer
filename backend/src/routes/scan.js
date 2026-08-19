@@ -12,6 +12,7 @@ const { executeZapScan } = require('../services/zapScanner');
 const { saveReport, getReport } = require('../services/reportStore');
 const { capabilities } = require('../config/scanCapabilities');
 const { optionalAuth, protect } = require('../middleware/auth');
+const { checkScanQuota } = require('../middleware/quotaGuard');
 const { scanCdnLibraries } = require('../services/cveScanner');
 const { scanSubdomains } = require('../services/subdomainScanner');
 const { addScanJob } = require('../services/scanQueue');
@@ -205,7 +206,19 @@ function extractDomainFromScan(scan) {
 router.get('/analytics', protect, async (req, res) => {
   try {
     const Scan = require('../models/Scan');
-    const userScans = await Scan.find({ userId: req.user._id }).sort({ createdAt: -1 });
+    const { teamId } = req.query;
+
+    let query = {};
+    if (teamId && teamId !== 'personal' && teamId !== 'null' && teamId !== 'undefined') {
+      query = { teamId };
+    } else {
+      query = {
+        userId: req.user._id,
+        $or: [{ teamId: null }, { teamId: { $exists: false } }]
+      };
+    }
+
+    const userScans = await Scan.find(query).sort({ createdAt: -1 });
 
     if (userScans.length === 0) {
       return res.json({
@@ -430,13 +443,13 @@ router.post('/chat', async (req, res) => {
 
 
 // POST /api/scan
-router.post('/', optionalAuth, async (req, res) => {
+router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
   const startTime = Date.now();
   const userId = req.user ? req.user._id : null;
   const scanId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
   
   try {
-    let { url, consent, mode, socketId, authCookie, authHeader, delay, useZap, zapScanMode } = req.body;
+    let { url, consent, mode, socketId, authCookie, authHeader, delay, useZap, zapScanMode, teamId } = req.body;
     if (!url) {
       return res.status(400).json({ error: 'url is required' });
     }
@@ -731,7 +744,7 @@ router.post('/', optionalAuth, async (req, res) => {
       zapRequestStatus: shouldRunZap ? 'completed' : (capabilities.zapScans ? 'not_applicable_for_quick_scan' : 'disabled')
     });
     console.log(`[scanRoutes] Persisting sync scan report. ID: ${scanId}`);
-    await saveReport(scanId, finalReport, userId);
+    await saveReport(scanId, finalReport, userId, teamId);
 
     if (!userId) {
       res.json(maskReportForGuests(finalReport));

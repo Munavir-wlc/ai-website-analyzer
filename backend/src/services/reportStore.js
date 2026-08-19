@@ -15,7 +15,7 @@ const REPORT_DIR = '';
  * @param {object} report - Full scan report data
  * @param {string|mongoose.Types.ObjectId} [userId=null] - Authenticated user's DB ID
  */
-async function saveReport(scanId, report, userId = null) {
+async function saveReport(scanId, report, userId = null, teamId = null) {
   try {
     const expiresAt = userId ? null : new Date(Date.now() + REPORT_TTL_MS);
     const scannedUrl = report.scannedUrl || report.url || '';
@@ -31,6 +31,12 @@ async function saveReport(scanId, report, userId = null) {
         userId: userId || null,
         scanId: { $ne: scanId }
       };
+
+      if (teamId) {
+        query.teamId = teamId;
+      } else {
+        query.$or = [{ teamId: null }, { teamId: { $exists: false } }];
+      }
 
       if (isZapScanned) {
         query['report.zapScanData.scanned'] = true;
@@ -70,6 +76,7 @@ async function saveReport(scanId, report, userId = null) {
       {
         scanId,
         userId,
+        teamId: teamId || null,
         url: scannedUrl,
         score: report.score || 0,
         grade: report.grade || 'F',
