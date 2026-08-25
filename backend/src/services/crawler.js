@@ -3,10 +3,139 @@ const cheerio = require('cheerio');
 const sslChecker = require('ssl-checker').default;
 const dns = require('dns').promises;
 const net = require('net');
+const http = require('http');
+const https = require('https');
 const whoiser = require('whoiser');
-const { isSafeUrl } = require('../utils/ssrfGuard');
+const ssrfGuard = require('../utils/ssrfGuard');
+const isSafeUrl = (urlOrHost) => ssrfGuard.isSafeUrl(urlOrHost);
 
 const CRAWL_TIMEOUT = 15000; // 15 seconds
+
+/**
+ * Resolves a hostname to a safe IP and returns custom agents that pin the connection.
+ * Bypasses DNS resolution for subsequent socket connections, preventing TOCTOU.
+ */
+async function resolveSafeIpAndGetAgents(hostname) {
+  // If it's already an IP, validate it directly
+  if (net.isIP(hostname)) {
+    const { isPrivateIPv4, isPrivateIPv6 } = require('../utils/ssrfGuard');
+    if (net.isIPv4(hostname) && isPrivateIPv4(hostname)) {
+      throw new Error(`SSRF Guard: Unsafe IP ${hostname}`);
+    }
+    if (net.isIPv6(hostname) && isPrivateIPv6(hostname)) {
+      throw new Error(`SSRF Guard: Unsafe IP ${hostname}`);
+    }
+    return { httpAgent: undefined, httpsAgent: undefined, resolvedIp: hostname };
+  }
+
+  // Resolve hostname
+  let addresses = [];
+  try {
+    addresses = await dns.resolve(hostname);
+  } catch (_) {
+    try {
+      const lookupRes = await dns.lookup(hostname, { all: true });
+      addresses = lookupRes.map(item => item.address);
+    } catch (err) {
+      throw new Error(`SSRF Guard: DNS resolution failed for hostname ${hostname}`);
+    }
+  }
+
+  if (!addresses || addresses.length === 0) {
+    throw new Error(`SSRF Guard: DNS resolution returned no addresses for ${hostname}`);
+  }
+
+  const { isPrivateIPv4, isPrivateIPv6 } = require('../utils/ssrfGuard');
+
+  // Verify all resolved addresses are safe
+  for (const ip of addresses) {
+    if (net.isIPv4(ip)) {
+      if (isPrivateIPv4(ip)) throw new Error(`SSRF Guard: Unsafe IP ${ip} resolved for ${hostname}`);
+    } else if (net.isIPv6(ip)) {
+      if (isPrivateIPv6(ip)) throw new Error(`SSRF Guard: Unsafe IP ${ip} resolved for ${hostname}`);
+    } else {
+      throw new Error(`SSRF Guard: Invalid IP protocol type for ${hostname}`);
+    }
+  }
+
+  // Pin to the first resolved address
+  const pinnedIp = addresses[0];
+
+  // Create a custom lookup function for this request
+  const lookupFn = (hostToResolve, options, callback) => {
+    if (hostToResolve === hostname) {
+      return callback(null, pinnedIp, net.isIPv4(pinnedIp) ? 4 : 6);
+    }
+    dns.lookup(hostToResolve, options, callback);
+  };
+
+  const httpAgent = new http.Agent({ lookup: lookupFn, keepAlive: false });
+  const httpsAgent = new https.Agent({ lookup: lookupFn, keepAlive: false });
+
+  return { httpAgent, httpsAgent, resolvedIp: pinnedIp };
+}
+
+/**
+ * Executes an HTTP request safely by resolving/pinning the target host and re-validating redirect hops.
+ * @param {string} initialUrl - The starting URL
+ * @param {Object} axiosConfig - Axios options (headers, timeout, method, data, etc.)
+ * @param {number} maxHops - Maximum redirect hops allowed
+ */
+async function safeRequest(initialUrl, axiosConfig = {}, maxHops = 5) {
+  let currentUrl = initialUrl;
+  let currentMethod = axiosConfig.method || 'GET';
+  let hops = 0;
+  const redirectChain = [initialUrl];
+  
+  while (hops <= maxHops) {
+    const urlObj = new URL(currentUrl);
+    const hostname = urlObj.hostname;
+    
+    // Resolve DNS once to pin the IP and get safe lookup agents
+    const { httpAgent, httpsAgent } = await resolveSafeIpAndGetAgents(hostname);
+    
+    const requestConfig = {
+      ...axiosConfig,
+      url: currentUrl,
+      method: currentMethod,
+      maxRedirects: 0, // Block Axios from following redirects internally
+      validateStatus: () => true, // Don't throw on status codes
+      httpAgent,
+      httpsAgent
+    };
+
+    // Execute request
+    const response = await axios(requestConfig);
+    
+    // Check if it's a redirect (only follow if it's a redirect status and has Location header)
+    const isRedirect = response.status >= 300 && response.status < 400 && response.headers['location'];
+    if (isRedirect) {
+      const location = response.headers['location'];
+      currentUrl = new URL(location, currentUrl).toString();
+      redirectChain.push(currentUrl);
+      // On redirect, follow standard HTTP client behavior: change method to GET
+      currentMethod = 'GET';
+      hops++;
+      continue;
+    }
+    
+    // If not a redirect, validate the status against caller's expected status rules
+    const validateStatus = axiosConfig.validateStatus || ((status) => status >= 200 && status < 300);
+    if (!validateStatus(response.status)) {
+      const err = new Error(`Request failed with status code ${response.status}`);
+      err.response = response;
+      throw err;
+    }
+    
+    // Return final response, setting response url and redirect chain
+    response.config = response.config || {};
+    response.config.url = currentUrl;
+    response.redirectChain = redirectChain;
+    return response;
+  }
+  
+  throw new Error(`SSRF Guard: Max redirect hops (${maxHops}) exceeded`);
+}
 
 /**
  * Fetch a URL and return HTML, headers, and cheerio object
@@ -36,18 +165,15 @@ async function crawl(url, auth = {}) {
     if (masked['Cookie']) masked['Cookie'] = masked['Cookie'].substring(0, 15) + '...[REDACTED]';
     console.log(`[crawler] Crawling URL: ${normalizedUrl} with headers:`, masked);
 
-    const response = await axios({
-      url: normalizedUrl,
-      method: 'GET',
+    const response = await safeRequest(normalizedUrl, {
       timeout: CRAWL_TIMEOUT,
-      maxRedirects: 5,
       responseType: 'text',
       headers
     });
 
     console.log(`[crawler] Crawl success. URL: ${normalizedUrl}, Status: ${response.status}`);
     const html = typeof response.data === 'string' ? response.data : '';
-    const finalUrl = response.request?.res?.responseUrl || response.config?.url || normalizedUrl;
+    const finalUrl = response.config?.url || normalizedUrl;
     const $ = cheerio.load(html);
 
     return {
@@ -56,7 +182,7 @@ async function crawl(url, auth = {}) {
       finalUrl,
       statusCode: response.status,
       headers: response.headers,
-      redirectChain: [normalizedUrl],
+      redirectChain: response.redirectChain || [normalizedUrl],
       $
     };
   } catch (err) {
@@ -86,7 +212,7 @@ async function fetchRobotsTxt(baseUrl, auth = {}) {
     if (auth.authHeader) headers['Authorization'] = auth.authHeader;
     if (auth.authCookie) headers['Cookie'] = auth.authCookie;
 
-    const res = await axios.get(robotsUrl, {
+    const res = await safeRequest(robotsUrl, {
       timeout: 5000,
       headers
     });
@@ -362,12 +488,11 @@ async function checkExposedFiles(baseUrl, techStack = [], auth = {}) {
 
     await Promise.all(filteredPaths.map(async (p) => {
       try {
-        const res = await axios.get(`${origin}${p}`, {
+        const res = await safeRequest(`${origin}${p}`, {
           timeout: 5000,
           validateStatus: (status) => status === 200,
-          maxRedirects: 2,
           headers
-        });
+        }, 2);
         if (res.status === 200) {
           exposed.push(p);
         }
@@ -397,8 +522,7 @@ async function checkHttpMethods(url, auth = {}) {
 
     await Promise.all(methods.map(async (method) => {
       try {
-        const res = await axios({
-          url,
+        const res = await safeRequest(url, {
           method,
           timeout: 5000,
           validateStatus: () => true,
