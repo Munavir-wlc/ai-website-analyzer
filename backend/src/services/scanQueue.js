@@ -11,6 +11,27 @@ let connection = null;
 
 // In-memory queue fallback when Redis is offline
 const inMemoryQueue = [];
+let isProcessingInMemory = false;
+
+async function processNextInMemoryJob() {
+  if (isProcessingInMemory || inMemoryQueue.length === 0) return;
+  isProcessingInMemory = true;
+
+  const jobData = inMemoryQueue.shift();
+  if (jobData) {
+    try {
+      const { processScanJob } = require('./scanWorker');
+      if (processScanJob) {
+        await processScanJob(jobData);
+      }
+    } catch (err) {
+      console.error('[scanQueue] Error processing in-memory job:', err);
+    }
+  }
+
+  isProcessingInMemory = false;
+  setImmediate(processNextInMemoryJob);
+}
 
 try {
   connection = new Redis({
@@ -73,15 +94,7 @@ async function addScanJob(data) {
   }
 
   inMemoryQueue.push(data);
-  setImmediate(async () => {
-    const jobData = inMemoryQueue.shift();
-    if (jobData) {
-      const { processScanJob } = require('./scanWorker');
-      if (processScanJob) {
-        await processScanJob(jobData);
-      }
-    }
-  });
+  processNextInMemoryJob();
 
   return true;
 }

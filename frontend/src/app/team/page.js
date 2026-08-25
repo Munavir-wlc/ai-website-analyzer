@@ -94,6 +94,12 @@ function TeamPageContent() {
       });
       const data = await res.json();
       if (res.ok) {
+        if (data.team && data.team._id) {
+          await refreshGlobalWorkspaces(data.team._id);
+          setActiveTeam(data.team);
+        } else {
+          await refreshGlobalWorkspaces();
+        }
         fetchTeams();
         fetchMyInvitations();
       } else {
@@ -145,6 +151,12 @@ function TeamPageContent() {
       const data = await res.json();
       if (res.ok) {
         setNewTeamName('');
+        if (data.team && data.team._id) {
+          await refreshGlobalWorkspaces(data.team._id);
+          setActiveTeam(data.team);
+        } else {
+          await refreshGlobalWorkspaces();
+        }
         fetchTeams();
       } else {
         setError(data.error || 'Failed to create team');
@@ -196,6 +208,12 @@ function TeamPageContent() {
       const data = await res.json();
       if (res.ok) {
         setJoinTokenInput('');
+        if (data.team && data.team._id) {
+          await refreshGlobalWorkspaces(data.team._id);
+          setActiveTeam(data.team);
+        } else {
+          await refreshGlobalWorkspaces();
+        }
         fetchTeams();
       } else {
         setError(data.error || 'Failed to join workspace');

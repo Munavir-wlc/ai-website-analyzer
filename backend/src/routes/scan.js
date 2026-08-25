@@ -113,6 +113,8 @@ router.get('/results/:scanId', optionalAuth, async (req, res) => {
       const belongsToCurrentUser = !!(req.user && scan.userId && scan.userId.toString() === req.user._id.toString());
       return res.json({
         ...scan.report,
+        scanId: scan.scanId,
+        teamId: scan.teamId,
         isPublic: true,
         belongsToCurrentUser
       });
@@ -134,6 +136,8 @@ router.get('/results/:scanId', optionalAuth, async (req, res) => {
       console.log(`[scanRoutes] Scan report found successfully for ID: ${scanId}`);
       return res.json({
         ...scan.report,
+        scanId: scan.scanId,
+        teamId: scan.teamId,
         isPublic: !!scan.isPublic,
         belongsToCurrentUser: true,
         findingStatuses: scan.findingStatuses ? Object.fromEntries(scan.findingStatuses) : {}

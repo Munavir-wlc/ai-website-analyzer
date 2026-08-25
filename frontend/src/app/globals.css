@@ -230,3 +230,111 @@ html:not(.dark) .audit-report-wrap tr:hover {
     break-inside: avoid;
   }
 }
+
+/* Glassmorphism Lock Screen Overlay Styles */
+.vapt-locked-overlay {
+  background-color: rgba(9, 13, 22, 0.8) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  transition: all 0.3s ease;
+}
+
+html:not(.dark) .vapt-locked-overlay {
+  background-color: rgba(255, 255, 255, 0.5) !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+
+.vapt-locked-card {
+  background-color: rgba(15, 23, 42, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 40px rgba(99, 102, 241, 0.05) !important;
+  color: #f8fafc !important;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+html:not(.dark) .vapt-locked-card {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 25px 65px -12px rgba(0, 0, 0, 0.12), 0 0 50px rgba(99, 102, 241, 0.03) !important;
+  color: #0f172a !important;
+}
+
+.vapt-locked-icon-container {
+  background-color: rgba(99, 102, 241, 0.1) !important;
+  border: 1px solid rgba(99, 102, 241, 0.2) !important;
+  color: #818cf8 !important;
+  animation: pulse 2s infinite;
+}
+
+html:not(.dark) .vapt-locked-icon-container {
+  background-color: rgba(79, 70, 229, 0.08) !important;
+  border: 1px solid rgba(79, 70, 229, 0.15) !important;
+  color: #4f46e5 !important;
+}
+
+.vapt-locked-title {
+  color: #ffffff !important;
+}
+
+html:not(.dark) .vapt-locked-title {
+  color: #0f172a !important;
+}
+
+.vapt-locked-desc {
+  color: #94a3b8 !important;
+}
+
+html:not(.dark) .vapt-locked-desc {
+  color: #475569 !important;
+}
+
+.vapt-locked-highlight {
+  color: #ffffff !important;
+}
+
+html:not(.dark) .vapt-locked-highlight {
+  color: #1e293b !important;
+}
+
+.vapt-locked-btn-primary {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 20px -5px rgba(79, 70, 229, 0.3) !important;
+  border: none !important;
+  transition: all 0.2s ease !important;
+}
+
+.vapt-locked-btn-primary:hover {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+  transform: translateY(-2px) scale(1.02) !important;
+  box-shadow: 0 12px 24px -5px rgba(79, 70, 229, 0.45) !important;
+}
+
+.vapt-locked-btn-secondary {
+  background-color: #020617 !important;
+  color: #cbd5e1 !important;
+  border: 1px solid #1e293b !important;
+  transition: all 0.2s ease !important;
+}
+
+.vapt-locked-btn-secondary:hover {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #334155 !important;
+  transform: translateY(-2px) scale(1.02) !important;
+}
+
+html:not(.dark) .vapt-locked-btn-secondary {
+  background-color: #ffffff !important;
+  color: #334155 !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+html:not(.dark) .vapt-locked-btn-secondary:hover {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: #94a3b8 !important;
+  transform: translateY(-2px) scale(1.02) !important;
+}
+

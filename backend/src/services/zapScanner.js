@@ -277,106 +277,112 @@ async function executeZapScan(targetUrl, authOptions = {}, onProgress, intensity
     console.log(`[zapScanner] ZAP Passive analysis completed.`);
 
     // 4. Start ZAP Active Scan
-    onProgress('zap_ascan', 'in_progress', { message: 'Optimizing ZAP active scan settings...' });
-    try {
-      console.log(`[zapScanner] Configuring ZAP Active Scan (intensity: ${intensity.toUpperCase()})...`);
-      // A. Concurrent threads limits
-      await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionThreadPerHost/`, {
-        params: { Integer: profile.threadsPerHost },
-        headers
-      });
-      // B. Alerts limit per rule
-      await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionMaxAlertsPerRule/`, {
-        params: { Integer: profile.maxAlertsPerRule },
-        headers
-      });
-      // C. Max rule duration
-      await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionMaxRuleDurationInMins/`, {
-        params: { Integer: profile.maxRuleDurationMins },
-        headers
-      });
-      // D. Max total active scan duration
-      await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionMaxScanDurationInMins/`, {
-        params: { Integer: profile.maxScanDurationMins },
-        headers
-      });
-      // E. Set Default Scan Policy Name
-      await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionDefaultPolicy/`, {
-        params: { String: 'Default Policy' },
-        headers
-      }).catch(() => {});
-      // F. Configure Attack Strength dynamically
-      await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionAttackStrength/`, {
-        params: { String: profile.attackStrength },
-        headers
-      }).catch(() => {});
-    } catch (configErr) {
-      console.warn('[zapScanner] Failed to configure ZAP performance options:', configErr.message);
-    }
-
-    onProgress('zap_ascan', 'in_progress', { message: 'Starting ZAP Active Scan...' });
-    console.log(`[zapScanner] Launching ZAP Active Scan (Injections)...`);
-    let activeScanId;
-    try {
-      const ascanRes = await axios.get(`${ZAP_URL}/JSON/ascan/action/scan/`, {
-        params: { url: targetUrl, recurse: true, scanPolicyName: '', method: '', postData: '' },
-        headers
-      });
-      activeScanId = ascanRes.data.scan;
-    } catch (err) {
-      // If ZAP cannot find the URL in the site tree, seed it and retry once.
-      const isUrlTreeError = err.response && err.response.data && typeof err.response.data === 'object'
-        ? err.response.data.code === 'url_not_found' || String(err.response.data.message || '').includes('URL Not Found')
-        : false;
-
-      if (isUrlTreeError) {
-        console.warn('[zapScanner] Active scan failed because URL was not in ZAP tree. Seeding URL and retrying.');
-        await seedUrlInZapTree(targetUrl, headers);
-        const retryRes = await axios.get(`${ZAP_URL}/JSON/ascan/action/scan/`, {
-          params: { url: targetUrl, recurse: true },
+    const ZAP_PASSIVE_ONLY = process.env.ZAP_PASSIVE_ONLY === 'true';
+    if (ZAP_PASSIVE_ONLY || intensity === 'passive') {
+      console.log(`[zapScanner] ZAP Passive-Only mode active. Skipping ZAP Active Scan.`);
+      onProgress('zap_ascan', 'completed', { message: 'Skipped active vulnerability scanning (Passive-only mode)' });
+    } else {
+      onProgress('zap_ascan', 'in_progress', { message: 'Optimizing ZAP active scan settings...' });
+      try {
+        console.log(`[zapScanner] Configuring ZAP Active Scan (intensity: ${intensity.toUpperCase()})...`);
+        // A. Concurrent threads limits
+        await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionThreadPerHost/`, {
+          params: { Integer: profile.threadsPerHost },
           headers
         });
-        activeScanId = retryRes.data.scan;
-      } else {
-        throw err;
+        // B. Alerts limit per rule
+        await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionMaxAlertsPerRule/`, {
+          params: { Integer: profile.maxAlertsPerRule },
+          headers
+        });
+        // C. Max rule duration
+        await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionMaxRuleDurationInMins/`, {
+          params: { Integer: profile.maxRuleDurationMins },
+          headers
+        });
+        // D. Max total active scan duration
+        await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionMaxScanDurationInMins/`, {
+          params: { Integer: profile.maxScanDurationMins },
+          headers
+        });
+        // E. Set Default Scan Policy Name
+        await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionDefaultPolicy/`, {
+          params: { String: 'Default Policy' },
+          headers
+        }).catch(() => {});
+        // F. Configure Attack Strength dynamically
+        await axios.get(`${ZAP_URL}/JSON/ascan/action/setOptionAttackStrength/`, {
+          params: { String: profile.attackStrength },
+          headers
+        }).catch(() => {});
+      } catch (configErr) {
+        console.warn('[zapScanner] Failed to configure ZAP performance options:', configErr.message);
       }
-    }
 
-    console.log(`[zapScanner] ZAP Active Scan ID: ${activeScanId}`);
+      onProgress('zap_ascan', 'in_progress', { message: 'Starting ZAP Active Scan...' });
+      console.log(`[zapScanner] Launching ZAP Active Scan (Injections)...`);
+      let activeScanId;
+      try {
+        const ascanRes = await axios.get(`${ZAP_URL}/JSON/ascan/action/scan/`, {
+          params: { url: targetUrl, recurse: true, scanPolicyName: '', method: '', postData: '' },
+          headers
+        });
+        activeScanId = ascanRes.data.scan;
+      } catch (err) {
+        // If ZAP cannot find the URL in the site tree, seed it and retry once.
+        const isUrlTreeError = err.response && err.response.data && typeof err.response.data === 'object'
+          ? err.response.data.code === 'url_not_found' || String(err.response.data.message || '').includes('URL Not Found')
+          : false;
 
-    // Poll Active Scan status with safety timeout from profile
-    let ascanCompleted = false;
-    const ascanStartTime = Date.now();
-    
-    while (!ascanCompleted) {
-      const statusRes = await axios.get(`${ZAP_URL}/JSON/ascan/view/status/`, {
-        params: { scanId: activeScanId },
-        headers
-      });
-      const progress = parseInt(statusRes.data.status, 10);
-      console.log(`[zapScanner] ZAP Active Scan progress: ${progress}%`);
-      onProgress('zap_ascan', 'in_progress', { message: `Active scan: ${progress}% completed` });
-      
-      if (progress >= 100) {
-        ascanCompleted = true;
-      } else if (Date.now() - ascanStartTime > profile.ascanTimeout) {
-        console.warn(`[zapScanner] Active Scan exceeded timeout (${profile.ascanTimeout / 1000}s). Stopping scan...`);
-        onProgress('zap_ascan', 'in_progress', { message: 'Max time limit reached. Finalizing current findings...' });
-        try {
-          await axios.get(`${ZAP_URL}/JSON/ascan/action/stop/`, {
-            params: { scanId: activeScanId },
+        if (isUrlTreeError) {
+          console.warn('[zapScanner] Active scan failed because URL was not in ZAP tree. Seeding URL and retrying.');
+          await seedUrlInZapTree(targetUrl, headers);
+          const retryRes = await axios.get(`${ZAP_URL}/JSON/ascan/action/scan/`, {
+            params: { url: targetUrl, recurse: true },
             headers
           });
-        } catch (e) {
-          console.error('[zapScanner] Error stopping active scan:', e.message);
+          activeScanId = retryRes.data.scan;
+        } else {
+          throw err;
         }
-        ascanCompleted = true;
-      } else {
-        await sleep(2000);
       }
+
+      console.log(`[zapScanner] ZAP Active Scan ID: ${activeScanId}`);
+
+      // Poll Active Scan status with safety timeout from profile
+      let ascanCompleted = false;
+      const ascanStartTime = Date.now();
+      
+      while (!ascanCompleted) {
+        const statusRes = await axios.get(`${ZAP_URL}/JSON/ascan/view/status/`, {
+          params: { scanId: activeScanId },
+          headers
+        });
+        const progress = parseInt(statusRes.data.status, 10);
+        console.log(`[zapScanner] ZAP Active Scan progress: ${progress}%`);
+        onProgress('zap_ascan', 'in_progress', { message: `Active scan: ${progress}% completed` });
+        
+        if (progress >= 100) {
+          ascanCompleted = true;
+        } else if (Date.now() - ascanStartTime > profile.ascanTimeout) {
+          console.warn(`[zapScanner] Active Scan exceeded timeout (${profile.ascanTimeout / 1000}s). Stopping scan...`);
+          onProgress('zap_ascan', 'in_progress', { message: 'Max time limit reached. Finalizing current findings...' });
+          try {
+            await axios.get(`${ZAP_URL}/JSON/ascan/action/stop/`, {
+              params: { scanId: activeScanId },
+              headers
+            });
+          } catch (e) {
+            console.error('[zapScanner] Error stopping active scan:', e.message);
+          }
+          ascanCompleted = true;
+        } else {
+          await sleep(2000);
+        }
+      }
+      onProgress('zap_ascan', 'completed');
+      console.log(`[zapScanner] ZAP Active Scan completed.`);
     }
-    onProgress('zap_ascan', 'completed');
-    console.log(`[zapScanner] ZAP Active Scan completed.`);
 
     // 5. Fetch and Normalize ZAP Alerts
     onProgress('zap_alerts', 'in_progress', { message: 'Fetching ZAP findings...' });

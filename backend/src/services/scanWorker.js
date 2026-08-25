@@ -380,27 +380,45 @@ async function processScanJob(data) {
   }
 }
 
-function initScanWorker() {
-  if (!connection) {
-    console.log('[scanWorker] Redis unavailable. In-memory queue handler will process jobs.');
-    return null;
-  }
+let workerInstance = null;
+
+function startWorkerInstance() {
+  if (workerInstance) return workerInstance;
 
   console.log('[scanWorker] Initializing background BullMQ scan worker...');
-  
-  const worker = new Worker('scan-queue', async (job) => {
+  workerInstance = new Worker('scan-queue', async (job) => {
     await processScanJob(job.data);
   }, { connection });
 
-  worker.on('failed', (job, err) => {
+  workerInstance.on('failed', (job, err) => {
     console.error(`[scanWorker] Job ${job?.id} failed with error:`, err.message);
   });
 
-  worker.on('completed', (job) => {
+  workerInstance.on('completed', (job) => {
     console.log(`[scanWorker] Job ${job?.id} completed successfully`);
   });
 
-  return worker;
+  return workerInstance;
+}
+
+function initScanWorker() {
+  if (!connection) {
+    console.log('[scanWorker] Redis connection failed to initialize. In-memory queue handler will process jobs.');
+    return null;
+  }
+
+  // If already connected, start the worker immediately
+  if (connection.status === 'ready' || connection.status === 'connect') {
+    return startWorkerInstance();
+  }
+
+  // Otherwise, listen for the connect event to start it safely
+  connection.on('connect', () => {
+    startWorkerInstance();
+  });
+
+  console.log('[scanWorker] Waiting for Redis connection to initialize worker...');
+  return null;
 }
 
 module.exports = { initScanWorker, processScanJob };

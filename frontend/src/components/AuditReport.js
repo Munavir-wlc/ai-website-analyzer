@@ -8,7 +8,8 @@ import Link from 'next/link';
 import { 
   Shield, CheckCircle, AlertTriangle, FileText, Download, Clock, 
   Settings, Globe, Lock, ShieldAlert, Cpu, Database, Eye, Info,
-  Loader2, Monitor, Smartphone, TrendingUp, TrendingDown, ArrowUpRight, ExternalLink, Search, Copy, Sparkles, BarChart3
+  Loader2, Monitor, Smartphone, TrendingUp, TrendingDown, ArrowUpRight, ExternalLink, Search, Copy, Sparkles, BarChart3,
+  Printer
 } from 'lucide-react';
 import FindingChatModal from './FindingChatModal';
 
@@ -235,22 +236,93 @@ export default function AuditReport({ result, screenshots }) {
   const dns = result.dnsDetails || {};
   const exposedFiles = result.exposedFiles || [];
   const positives = result.positives || [];
-  const techStack = result.techStack || { cms: [], framework: [], server: [], analytics: [], libraries: [] };
+  const techStack = {
+    cms: [],
+    framework: [],
+    server: [],
+    analytics: [],
+    libraries: [],
+    ...(result.techStack || {})
+  };
   const cookieAudit = result.cookieAudit || [];
   const corsIssues = result.corsIssues || [];
   const mixedContent = result.mixedContent || [];
   const compliance = result.complianceFlags || { gdpr: false, pci: false, hipaa: false };
   const breakdown = result.riskBreakdown || { critical: 0, high: 0, medium: 0, low: 0 };
 
-  const portScan = result.portScanData || { scanned: false, openPorts: [], totalScanned: 0 };
-  const whois = result.whoisData || { exists: false, registrar: 'Unknown', createdDate: null, expiryDate: null, daysRemaining: null };
-  const redirects = result.redirectData || { chain: [], redirectCount: 0, enforcesHttps: false, finalUrl: '', isCrossDomain: false };
-  const robots = result.robotsData || { exists: false, paths: [], sensitiveFound: [], raw: '' };
-  const subdomainData = result.subdomainData || { scanned: false, discovered: [], sensitiveFound: [], totalDiscovered: 0 };
-  const waf = result.wafData || { detected: false, name: null, confidence: 'low', source: null };
-  const apiDocs = result.apiDiscoveryData || { scanned: false, swaggerDocs: [], apiRoutes: [], totalDiscovered: 0 };
-  const loadTest = result.loadTestData || { scanned: false, totalRequests: 0, successfulRequests: 0, failedRequests: 0, avgResponseTimeMs: 0, minResponseTimeMs: 0, maxResponseTimeMs: 0, requestsPerSecond: 0, statusCodes: {}, rateLimitDetected: false, rateLimitHeadersFound: [], verdict: '' };
-  const zapScan = result.zapScanData || { scanned: false, available: false, status: 'not_requested', error: null, findingsCount: 0 };
+  const portScan = {
+    scanned: false,
+    openPorts: [],
+    totalScanned: 0,
+    ...(result.portScanData || {})
+  };
+  const whois = {
+    exists: false,
+    registrar: 'Unknown',
+    createdDate: null,
+    expiryDate: null,
+    daysRemaining: null,
+    ...(result.whoisData || {})
+  };
+  const redirects = {
+    chain: [],
+    redirectCount: 0,
+    enforcesHttps: false,
+    finalUrl: '',
+    isCrossDomain: false,
+    ...(result.redirectData || {})
+  };
+  const robots = {
+    exists: false,
+    paths: [],
+    sensitiveFound: [],
+    raw: '',
+    ...(result.robotsData || {})
+  };
+  const subdomainData = {
+    scanned: false,
+    discovered: [],
+    sensitiveFound: [],
+    totalDiscovered: 0,
+    ...(result.subdomainData || {})
+  };
+  const waf = {
+    detected: false,
+    name: null,
+    confidence: 'low',
+    source: null,
+    ...(result.wafData || {})
+  };
+  const apiDocs = {
+    scanned: false,
+    swaggerDocs: [],
+    apiRoutes: [],
+    totalDiscovered: 0,
+    ...(result.apiDiscoveryData || {})
+  };
+  const loadTest = {
+    scanned: false,
+    totalRequests: 0,
+    successfulRequests: 0,
+    failedRequests: 0,
+    avgResponseTimeMs: 0,
+    minResponseTimeMs: 0,
+    maxResponseTimeMs: 0,
+    requestsPerSecond: 0,
+    statusCodes: {},
+    rateLimitDetected: false,
+    rateLimitHeadersFound: [],
+    verdict: '',
+    ...(result.loadTestData || {})
+  };
+  const zapScan = {
+    scanned: false,
+    available: false,
+    status: 'not_requested',
+    error: null,
+    findingsCount: 0,
+    ...(result.zapScanData || {})
+  };
   const securityScore = result.securityScore ?? result.score ?? 0;
   const criticalCount = result.critical ?? breakdown.critical ?? 0;
   const highCount = result.high ?? breakdown.high ?? 0;
@@ -377,7 +449,12 @@ export default function AuditReport({ result, screenshots }) {
   const owaspMap = OWASP_CATEGORIES.map(category => {
     const matched = issues.filter(finding => {
       // Direct owasp field match
-      if (finding.owasp && finding.owasp.toLowerCase().includes(category.id.toLowerCase())) return true;
+      const owaspStr = typeof finding.owasp === 'string'
+        ? finding.owasp
+        : Array.isArray(finding.owasp)
+          ? finding.owasp.join(', ')
+          : '';
+      if (owaspStr && owaspStr.toLowerCase().includes(category.id.toLowerCase())) return true;
       // Keyword match in title/description
       const text = ((finding.title || '') + ' ' + (finding.description || '')).toLowerCase();
       return category.keywords.some(kw => text.includes(kw));
@@ -487,18 +564,18 @@ export default function AuditReport({ result, screenshots }) {
             </p>
             
             {/* Meta stats grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 text-xs font-semibold uppercase tracking-wide text-slate-400 pt-2">
-              <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
-                <span className="block text-[10px] text-slate-500 mb-0.5">Scanned Date</span>
-                <span className="text-white text-[11px] normal-case">{new Date(result.scanDate || result.generatedAt).toLocaleDateString()}</span>
+            <div className="flex flex-wrap gap-4 text-xs font-semibold uppercase tracking-wide text-slate-400 pt-2 w-full">
+              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 text-center flex-1 min-w-[120px] max-w-[200px] flex flex-col justify-between h-full min-h-[72px]">
+                <span className="block text-[10px] text-slate-500 mb-1.5 leading-none">Scan Date</span>
+                <span className="text-white text-[11px] normal-case mt-auto block font-bold">{new Date(result.scanDate || result.generatedAt).toLocaleDateString()}</span>
               </div>
-              <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
-                <span className="block text-[10px] text-slate-500 mb-0.5">Scan Duration</span>
-                <span className="text-white text-[11px] normal-case">{result.scanDuration || '0.1'}s</span>
+              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 text-center flex-1 min-w-[120px] max-w-[200px] flex flex-col justify-between h-full min-h-[72px]">
+                <span className="block text-[10px] text-slate-500 mb-1.5 leading-none">Duration</span>
+                <span className="text-white text-[11px] normal-case mt-auto block font-bold">{result.scanDuration || '0.1'}s</span>
               </div>
-              <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
-                <span className="block text-[10px] text-slate-500 mb-0.5">Scan Depth</span>
-                <span className="text-white text-[11px] normal-case font-bold">
+              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 text-center flex-1 min-w-[120px] max-w-[200px] flex flex-col justify-between h-full min-h-[72px]">
+                <span className="block text-[10px] text-slate-500 mb-1.5 leading-none">Scan Depth</span>
+                <span className="text-white text-[10px] normal-case font-bold mt-auto block leading-tight">
                   {result.scanMode === 'quick'
                     ? 'Quick Passive'
                     : zapScan.scanned
@@ -506,21 +583,34 @@ export default function AuditReport({ result, screenshots }) {
                       : 'Full Deterministic'}
                 </span>
               </div>
-              <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
-                <span className="block text-[10px] text-slate-500 mb-0.5">Authentication</span>
-                <span className={`${result.scanStatus?.authenticatedScan ? 'text-indigo-400 font-bold' : 'text-slate-400 text-[11px]'}`}>
+              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 text-center flex-1 min-w-[120px] max-w-[200px] flex flex-col justify-between h-full min-h-[72px]">
+                <span className="block text-[10px] text-slate-500 mb-1.5 leading-none">Auth Status</span>
+                <span className={`mt-auto block font-bold ${result.scanStatus?.authenticatedScan ? 'text-indigo-400' : 'text-slate-400 text-[11px]'}`}>
                   {result.scanStatus?.authenticatedScan ? 'Authenticated' : 'Guest Scan'}
                 </span>
               </div>
-              <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
-                <span className="block text-[10px] text-slate-500 mb-0.5">Compliance</span>
-                <span className={`${compliance.gdpr || compliance.pci || compliance.hipaa ? 'text-amber-400' : 'text-emerald-400'}`}>
+              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 text-center flex-1 min-w-[120px] max-w-[200px] flex flex-col justify-between h-full min-h-[72px]">
+                <span className="block text-[10px] text-slate-500 mb-1.5 leading-none">AI Threat</span>
+                <span className={`text-[11px] font-bold mt-auto flex items-center justify-center gap-1 normal-case ${result.aiEnabled ? 'text-indigo-400' : 'text-slate-400'}`}>
+                  {result.aiEnabled ? (
+                    <>
+                      <Sparkles className="h-3.5 w-3.5 text-indigo-400 animate-pulse" />
+                      <span>Active</span>
+                    </>
+                  ) : (
+                    'Static'
+                  )}
+                </span>
+              </div>
+              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 text-center flex-1 min-w-[120px] max-w-[200px] flex flex-col justify-between h-full min-h-[72px]">
+                <span className="block text-[10px] text-slate-500 mb-1.5 leading-none">Compliance</span>
+                <span className={`mt-auto block font-bold ${compliance.gdpr || compliance.pci || compliance.hipaa ? 'text-amber-400' : 'text-emerald-400'}`}>
                   {compliance.gdpr || compliance.pci || compliance.hipaa ? 'Risks Found' : 'Pass'}
                 </span>
               </div>
-              <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60 text-center">
-                <span className="block text-[10px] text-slate-500 mb-0.5">Total Findings</span>
-                <span className="text-white text-[11px]">{totalIssues}</span>
+              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/60 text-center flex-1 min-w-[120px] max-w-[200px] flex flex-col justify-between h-full min-h-[72px]">
+                <span className="block text-[10px] text-slate-500 mb-1.5 leading-none">Findings</span>
+                <span className="text-white text-[11px] mt-auto block font-bold">{totalIssues}</span>
               </div>
             </div>
           </div>
@@ -584,30 +674,30 @@ export default function AuditReport({ result, screenshots }) {
         </div>
       )}
 
-      <div className="relative">
+      <div className={`relative ${result.isLocked ? 'min-h-[530px]' : ''}`}>
         {result.isLocked && (
-          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md rounded-3xl z-40 flex flex-col items-center justify-center p-8 text-center border border-slate-800/80 min-h-[500px]">
+          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center p-8 text-center rounded-3xl vapt-locked-overlay">
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-transparent pointer-events-none rounded-3xl" />
-            <div className="relative max-w-md bg-slate-900 border border-slate-850 p-8 rounded-3xl shadow-2xl flex flex-col items-center space-y-6">
-              <div className="h-16 w-16 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl flex items-center justify-center animate-pulse">
+            <div className="relative max-w-md p-8 rounded-3xl flex flex-col items-center space-y-6 vapt-locked-card">
+              <div className="h-16 w-16 rounded-2xl flex items-center justify-center vapt-locked-icon-container">
                 <Lock className="h-8 w-8" />
               </div>
               <div className="space-y-2">
-                <h3 className="text-2xl font-extrabold text-white">Unlock Vulnerability Findings</h3>
-                <p className="text-slate-400 text-sm leading-relaxed">
-                  We identified <strong className="text-white">{result.riskBreakdown?.critical || 0} Critical</strong>, <strong className="text-white">{result.riskBreakdown?.high || 0} High</strong>, and <strong className="text-white">{result.riskBreakdown?.medium || 0} Medium</strong> risk issues. Register or Log In to view full remediation guides, technical ports scan, and DNS/SSL security records.
+                <h3 className="text-2xl font-extrabold vapt-locked-title">Unlock Vulnerability Findings</h3>
+                <p className="text-sm leading-relaxed vapt-locked-desc">
+                  We identified <strong className="vapt-locked-highlight">{result.riskBreakdown?.critical || 0} Critical</strong>, <strong className="vapt-locked-highlight">{result.riskBreakdown?.high || 0} High</strong>, and <strong className="vapt-locked-highlight">{result.riskBreakdown?.medium || 0} Medium</strong> risk issues. Register or Log In to view full remediation guides, technical ports scan, and DNS/SSL security records.
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-3 w-full">
                 <Link
                   href={`/register?scanId=${result.scanId}`}
-                  className="flex-1 text-center bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-2.5 px-4 rounded-xl shadow-lg shadow-indigo-500/20 text-sm transition-all hover:scale-[1.02]"
+                  className="flex-1 text-center font-bold py-2.5 px-4 rounded-xl text-sm transition-all hover:scale-[1.02] vapt-locked-btn-primary"
                 >
                   Create Free Account
                 </Link>
                 <Link
                   href={`/login?scanId=${result.scanId}`}
-                  className="flex-1 text-center bg-slate-950 hover:bg-slate-900 text-slate-300 font-bold py-2.5 px-4 rounded-xl border border-slate-800 text-sm transition-all hover:scale-[1.02]"
+                  className="flex-1 text-center font-bold py-2.5 px-4 rounded-xl text-sm transition-all hover:scale-[1.02] vapt-locked-btn-secondary"
                 >
                   Log In
                 </Link>
@@ -747,9 +837,9 @@ export default function AuditReport({ result, screenshots }) {
                 <span className="flex h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse" />
                 Top Priority Recommendations
               </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
               {result.topPriority.map((issue, idx) => (
-                <div key={idx} className="p-4 bg-slate-950/60 border border-slate-800 rounded-2xl flex flex-col justify-between space-y-4">
+                <div key={idx} className="p-5 bg-slate-950/60 border border-slate-800 hover:border-slate-700/80 transition-all rounded-2xl flex flex-col justify-between space-y-4 h-full shadow-lg">
                   <div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 font-mono">
@@ -763,11 +853,11 @@ export default function AuditReport({ result, screenshots }) {
                         {issue.severity}
                       </span>
                     </div>
-                    <h4 className="text-sm font-bold text-white mt-2 line-clamp-1">{issue.title}</h4>
-                    <p className="text-xs text-slate-400 mt-1 line-clamp-3 leading-relaxed">{issue.description}</p>
+                    <h4 className="text-sm font-bold text-white mt-2 line-clamp-2 min-h-[40px] leading-snug">{issue.title}</h4>
+                    <p className="text-xs text-slate-400 mt-1.5 line-clamp-3 leading-relaxed">{issue.description}</p>
                   </div>
                   {issue.remediation && (
-                    <div className="text-[11px] text-indigo-400 bg-indigo-500/5 border border-indigo-500/10 p-2.5 rounded-xl">
+                    <div className="text-[11px] text-indigo-400 bg-indigo-500/5 border border-indigo-500/10 p-3 rounded-xl mt-auto">
                       <strong className="block text-[9px] uppercase tracking-wider text-indigo-300 font-semibold mb-0.5">Quick Fix:</strong>
                       {issue.remediation}
                     </div>
@@ -778,6 +868,39 @@ export default function AuditReport({ result, screenshots }) {
           </div>
         </div>
       )}
+
+      {/* AI Threat Model Status Banner (Overview Tab) */}
+      <div className={activeReportTab === 'overview' ? 'block' : 'hidden print:block'}>
+        <div className="border border-slate-800 rounded-3xl bg-slate-900/60 p-6 shadow-2xl relative overflow-hidden mb-6">
+          <div className={`absolute -inset-px bg-gradient-to-r ${result.aiEnabled ? 'from-indigo-500/10 via-purple-500/5' : 'from-slate-500/10 via-slate-850/5'} to-transparent rounded-3xl -z-10`} />
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="space-y-1.5 flex-1">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Sparkles className={`h-5 w-5 ${result.aiEnabled ? 'text-indigo-400 animate-pulse' : 'text-slate-400'}`} />
+                AI Threat Modeling Status
+              </h3>
+              <p className="text-slate-300 text-xs leading-relaxed">
+                {result.aiEnabled ? (
+                  <>
+                    This security report was compiled with <strong className="text-indigo-400 font-bold">AI-Assisted Threat Modeling (Active)</strong>. The system analyzed parsed document forms, script patterns, meta tags, and inline assets using generative LLM capabilities to discover logical security vulnerabilities and code weaknesses.
+                  </>
+                ) : (
+                  <>
+                    This security report was compiled using <strong className="text-slate-400 font-bold">Static Code Audits (Fallback Mode)</strong>. The server skipped generative LLM analysis because the OpenAI API credentials were not configured or enabled. While basic security configuration matches are present, deep cognitive pattern checks are inactive.
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="shrink-0 bg-slate-950/60 border border-slate-800/80 px-4 py-2.5 rounded-2xl flex items-center gap-3">
+              <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded font-mono ${
+                result.aiEnabled ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/25' : 'bg-slate-800 text-slate-400 border border-slate-700'
+              }`}>
+                {result.aiEnabled ? 'AI Active' : 'Static Only'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Compliance Risk Cards Grid */}
       <div className={activeReportTab === 'overview' ? 'block' : 'hidden print:block'}>

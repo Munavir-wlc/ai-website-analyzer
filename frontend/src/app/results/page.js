@@ -6,16 +6,54 @@ import Navbar from '../../components/Navbar';
 import AuditReport from '../../components/AuditReport';
 import Footer from '../../components/Footer';
 import { Button } from '../../components/ui/Button';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw, FolderOutput, Globe, User } from 'lucide-react';
 import { useAuth } from '../../lib/AuthContext';
+import { useWorkspace } from '../../lib/WorkspaceContext';
 
 export default function ResultsPage() {
-  const { token, loading: authLoading } = useAuth();
+  const { user, token, loading: authLoading } = useAuth();
+  const { workspaces } = useWorkspace();
+  const [openMoveMenu, setOpenMoveMenu] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [result, setResult] = useState(null);
   const [hasChecked, setHasChecked] = useState(false);
   const [screenshots, setScreenshots] = useState({ loading: false, desktop: null, mobile: null, error: null });
   const [errorMsg, setErrorMsg] = useState(null);
   const [showClaimedSuccess, setShowClaimedSuccess] = useState(false);
+
+  const handleMoveReport = async (targetWorkspaceId) => {
+    if (!result || !result.scanId) return;
+    try {
+      setMoving(true);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      const headers = { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
+      
+      const res = await fetch(`${API_URL}/api/team/move-scan/${result.scanId}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ targetWorkspaceId })
+      });
+      
+      if (res.ok) {
+        setResult(prev => ({
+          ...prev,
+          teamId: targetWorkspaceId === 'personal' ? null : targetWorkspaceId
+        }));
+        setOpenMoveMenu(false);
+      } else {
+        const errData = await res.json();
+        alert(errData.error || 'Failed to move report.');
+      }
+    } catch (err) {
+      console.error('Failed to move report:', err);
+      alert('Error occurred while moving report.');
+    } finally {
+      setMoving(false);
+    }
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -166,13 +204,76 @@ export default function ResultsPage() {
       <Navbar />
       <main className="flex-1 p-4 sm:p-6 lg:p-8">
         <div className="max-w-7xl mx-auto">
-          <div className="mb-6 flex justify-between items-center print:hidden">
+          <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 print:hidden bg-slate-100/80 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl">
             <Link
                href="/"
-               className="text-sm font-semibold text-slate-550 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1.5 transition-colors"
+               className="text-sm font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white inline-flex items-center gap-1.5 transition-colors"
             >
               <ArrowLeft className="h-4 w-4" /> Start New Scan
             </Link>
+
+            {/* Move report workspace controls (if user logged in & is owner of report) */}
+            {user && result && result.belongsToCurrentUser && (
+              <div className="flex items-center gap-3 self-end sm:self-auto">
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  Current Location: <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                    {result.teamId 
+                      ? (workspaces.find(w => w._id === result.teamId)?.name || 'Team Workspace')
+                      : 'Personal Workspace'}
+                  </span>
+                </span>
+                
+                {workspaces.length > 0 && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setOpenMoveMenu(!openMoveMenu)}
+                      disabled={moving}
+                      className="text-xs font-bold text-slate-800 dark:text-white hover:text-indigo-650 dark:hover:text-indigo-400 inline-flex items-center gap-1.5 border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-850 px-3.5 py-2 rounded-xl transition-all shadow-sm"
+                    >
+                      <FolderOutput className="h-3.5 w-3.5" />
+                      {moving ? 'Moving...' : 'Move to Workspace'}
+                    </button>
+
+                    {openMoveMenu && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setOpenMoveMenu(false)} />
+                        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-1.5 z-20 space-y-1 animate-fade-in">
+                          <div className="px-2.5 py-1.5 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                            Move Report to
+                          </div>
+                          
+                          {/* Personal Workspace option (if not current) */}
+                          {result.teamId && (
+                            <button
+                              onClick={() => handleMoveReport('personal')}
+                              className="w-full text-left px-2.5 py-2 rounded-lg text-xs text-slate-700 hover:text-slate-900 hover:bg-slate-50 dark:text-slate-350 dark:hover:text-white dark:hover:bg-slate-850/60 flex items-center gap-2 transition-colors"
+                            >
+                              <User className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                              <span>Personal Workspace</span>
+                            </button>
+                          )}
+
+                          {/* Team Workspaces options */}
+                          {workspaces
+                            .filter(w => w._id !== result.teamId)
+                            .map((w) => (
+                              <button
+                                key={w._id}
+                                onClick={() => handleMoveReport(w._id)}
+                                className="w-full text-left px-2.5 py-2 rounded-lg text-xs text-slate-700 hover:text-slate-900 hover:bg-slate-50 dark:text-slate-350 dark:hover:text-white dark:hover:bg-slate-850/60 flex items-center gap-2 transition-colors truncate"
+                              >
+                                <Globe className="h-3.5 w-3.5 text-purple-500 shrink-0" />
+                                <span className="truncate">{w.name}</span>
+                              </button>
+                            ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {showClaimedSuccess && (

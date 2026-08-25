@@ -27,7 +27,7 @@ export function WorkspaceProvider({ children }) {
     }
   }, [user, token]);
 
-  const fetchWorkspaces = async () => {
+  const fetchWorkspaces = async (newActiveId = null) => {
     try {
       setLoadingWorkspaces(true);
       const res = await fetch(`${API_BASE}/api/team/my-teams`, {
@@ -38,10 +38,11 @@ export function WorkspaceProvider({ children }) {
         const data = await res.json();
         setWorkspaces(data);
 
-        // Restore saved workspace from localStorage if valid
-        const savedWsId = localStorage.getItem('vapt_active_workspace_id');
-        if (savedWsId && savedWsId !== 'personal') {
-          const found = data.find(w => w._id === savedWsId);
+        // Determine which workspace to make active
+        const targetActiveId = newActiveId || localStorage.getItem('vapt_active_workspace_id');
+        
+        if (targetActiveId && targetActiveId !== 'personal') {
+          const found = data.find(w => w._id === targetActiveId);
           if (found) {
             setActiveWorkspace({
               id: found._id,
@@ -49,9 +50,17 @@ export function WorkspaceProvider({ children }) {
               type: 'team',
               teamData: found
             });
-            return;
+            if (newActiveId) {
+              localStorage.setItem('vapt_active_workspace_id', found._id);
+            }
+            return data;
           }
         }
+        
+        // Fallback to personal if not specified or not found
+        setActiveWorkspace({ id: 'personal', name: 'Personal Workspace', type: 'personal' });
+        localStorage.setItem('vapt_active_workspace_id', 'personal');
+        return data;
       }
     } catch (err) {
       console.error('[WorkspaceContext] Error fetching workspaces:', err);
