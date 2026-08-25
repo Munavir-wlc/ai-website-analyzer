@@ -199,6 +199,29 @@ export default function AuditReport({ result, screenshots }) {
     downloadAnchor.remove();
   };
 
+  const handleExportCSV = () => {
+    const findings = result.findings || [];
+    const headers = ['Category', 'Severity', 'Title', 'Description', 'Remediation', 'OWASP Reference'];
+    const rows = findings.map(f => [
+      f.category || 'General',
+      f.severity || 'info',
+      f.title || '',
+      (f.description || '').replace(/"/g, '""'),
+      (f.remediation || '').replace(/"/g, '""'),
+      f.owasp || ''
+    ]);
+    
+    let csvContent = "\uFEFF" + [headers.join(','), ...rows.map(r => r.map(val => `"${val}"`).join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", url);
+    downloadAnchor.setAttribute("download", `audit_report_${domain}.csv`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
   const domain = (() => {
     try {
       return new URL(result.scannedUrl || result.url).hostname;
@@ -213,11 +236,24 @@ export default function AuditReport({ result, screenshots }) {
 
   const score = result.score ?? 0;
   const scoreColor = 
-    score >= 90 ? '#10b981' // Green
-    : score >= 70 ? '#a3e635' // Light Green (lime-400)
-    : score >= 50 ? '#f59e0b' // Yellow
-    : score >= 30 ? '#f97316' // Orange
-    : '#ef4444'; // Red
+    score >= 90 ? '#10b981' :
+    score >= 70 ? '#f59e0b' :
+    '#ef4444';
+
+  const scores = result.categoryScores || {
+    overall: result.score || 0,
+    overallGrade: result.grade || 'F',
+    security: result.securityScore || result.score || 0,
+    securityGrade: result.grade || 'F',
+    performance: result.performanceData?.performanceScore ?? 100,
+    performanceGrade: 'A',
+    seo: result.seoData?.seoScore ?? 100,
+    seoGrade: 'A',
+    accessibility: result.accessibilityData?.accessibilityScore ?? 100,
+    accessibilityGrade: 'A',
+    aiSearch: result.aiSearchData?.aiSearchScore ?? 100,
+    aiSearchGrade: 'A'
+  };
 
   const statusText =
     score >= 90
@@ -374,6 +410,7 @@ export default function AuditReport({ result, screenshots }) {
   const reportTabs = [
     { id: 'overview', label: 'Overview', icon: Globe },
     { id: 'vulnerabilities', label: 'Vulnerabilities', icon: ShieldAlert, badge: totalIssues },
+    { id: 'audits', label: 'Audits & GEO', icon: Sparkles },
     { id: 'owasp', label: 'OWASP Top 10', icon: Shield },
     { id: 'headers', label: 'Headers & Cookies', icon: Lock },
     { id: 'network', label: 'Network & SSL', icon: Shield },
@@ -537,25 +574,73 @@ export default function AuditReport({ result, screenshots }) {
           >
             <Database className="h-4 w-4" /> Export JSON
           </Button>
+          <Button 
+            variant="outline" 
+            onClick={handleExportCSV} 
+            className="bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800 hover:border-slate-700 flex items-center gap-2 py-2 px-4 rounded-xl text-xs"
+          >
+            <Download className="h-4 w-4" /> Export CSV
+          </Button>
         </div>
       </div>
 
       {/* Audit Overview & Summary */}
       <div className="border border-slate-800 rounded-3xl bg-slate-900/60 p-6 sm:p-8 shadow-2xl relative overflow-hidden">
         <div className="absolute -inset-px bg-gradient-to-br from-indigo-500/10 to-purple-500/0 rounded-3xl -z-10" />
-        <div className="flex flex-col md:flex-row items-center gap-8 justify-around">
-          <div className="flex flex-col items-center text-center space-y-4">
-            <GradeGauge
-              grade={result.grade}
-              score={score}
-              size="large"
-              color={scoreColor}
-            />
-            <div>
-              <div className="text-3xl font-extrabold text-white">{score}/100</div>
-              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-1">Security Score</p>
+        <div className="flex flex-col items-center gap-6 w-full">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 w-full max-w-5xl py-4 justify-items-center">
+            <div className="flex flex-col items-center text-center space-y-2">
+              <GradeGauge grade={scores.overallGrade} score={scores.overall} size="md" color="#6366f1" />
+              <div>
+                <div className="text-sm font-bold text-white">{scores.overall}/100</div>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Overall Score</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center text-center space-y-2">
+              <GradeGauge grade={scores.securityGrade} score={scores.security} size="md" color="#ef4444" />
+              <div>
+                <div className="text-sm font-bold text-white">{scores.security}/100</div>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Security</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center text-center space-y-2">
+              <GradeGauge grade={scores.performanceGrade} score={scores.performance} size="md" color="#38bdf8" />
+              <div>
+                <div className="text-sm font-bold text-white">{scores.performance}/100</div>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Performance</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center text-center space-y-2">
+              <GradeGauge grade={scores.seoGrade} score={scores.seo} size="md" color="#f59e0b" />
+              <div>
+                <div className="text-sm font-bold text-white">{scores.seo}/100</div>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">SEO</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center text-center space-y-2">
+              <GradeGauge grade={scores.accessibilityGrade} score={scores.accessibility} size="md" color="#10b981" />
+              <div>
+                <div className="text-sm font-bold text-white">{scores.accessibility}/100</div>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Accessibility</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center text-center space-y-2">
+              <GradeGauge grade={scores.aiSearchGrade} score={scores.aiSearch} size="md" color="#a855f7" />
+              <div>
+                <div className="text-sm font-bold text-white">{scores.aiSearch}/100</div>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">GEO / AI Search</p>
+              </div>
             </div>
           </div>
+
+          <div className="w-full border-t border-slate-800/80 my-2" />
+
+          <div className="flex flex-col md:flex-row items-center gap-8 justify-around w-full">
 
           <div className="flex-1 space-y-4 max-w-xl text-center md:text-left">
             <h2 className="text-2xl font-bold tracking-tight" style={{ color: scoreColor }}>{statusText}</h2>
@@ -2231,6 +2316,239 @@ export default function AuditReport({ result, screenshots }) {
           </Card>
         </div>
       )}
+
+      {/* Audits & GEO Tab */}
+      <div className={activeReportTab === 'audits' ? 'block' : 'hidden print:block'}>
+        <div className="space-y-8">
+          {/* Performance Audit Card */}
+          <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+            <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+              <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-indigo-400" /> Performance Diagnostics
+                <span className="ml-auto text-xs font-normal text-slate-400">
+                  Score: {result.performanceData?.performanceScore ?? 100}/100
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
+                  <span className="text-slate-500 text-[10px] uppercase font-bold block">First Contentful Paint (FCP)</span>
+                  <span className="text-xl font-bold text-white block mt-1">
+                    {result.performanceData?.fcp ? `${Math.round(result.performanceData.fcp)} ms` : 'N/A'}
+                  </span>
+                </div>
+                <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
+                  <span className="text-slate-500 text-[10px] uppercase font-bold block">Time to First Byte (TTFB)</span>
+                  <span className="text-xl font-bold text-white block mt-1">
+                    {result.performanceData?.ttfb ? `${Math.round(result.performanceData.ttfb)} ms` : 'N/A'}
+                  </span>
+                </div>
+                <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
+                  <span className="text-slate-500 text-[10px] uppercase font-bold block">Load Time Estimate</span>
+                  <span className="text-xl font-bold text-white block mt-1">
+                    {result.performanceData?.loadTime ? `${Math.round(result.performanceData.loadTime)} ms` : 'N/A'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Performance Opportunities */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Performance Opportunities</h4>
+                {(!result.performanceData?.opportunities || result.performanceData.opportunities.length === 0) ? (
+                  <p className="text-emerald-400 text-xs font-semibold py-2">✓ No critical performance bottlenecks detected.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {result.performanceData.opportunities.map((opp, idx) => (
+                      <div key={idx} className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl flex gap-3">
+                        <div className="h-2 w-2 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                        <div>
+                          <h5 className="text-sm font-bold text-white">{opp.title}</h5>
+                          <p className="text-xs text-slate-400 mt-1">{opp.description}</p>
+                          <p className="text-xs text-indigo-400 mt-1.5 font-medium"><strong>Fix:</strong> {opp.remediation}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Accessibility Card */}
+          <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+            <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+              <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-indigo-400" /> Accessibility (WCAG) Checkpoints
+                <span className="ml-auto text-xs font-normal text-slate-400">
+                  Score: {result.accessibilityData?.accessibilityScore ?? 100}/100
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 space-y-4">
+              {(!result.accessibilityData?.findings || result.accessibilityData.findings.length === 0) ? (
+                <p className="text-emerald-400 text-xs font-semibold py-2">✓ Clean landing page accessibility structure. All core WCAG tests passed!</p>
+              ) : (
+                <div className="space-y-3">
+                  {result.accessibilityData.findings.map((f, idx) => (
+                    <div key={idx} className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl flex gap-3">
+                      <div className="h-2 w-2 rounded-full bg-red-500 mt-1.5 shrink-0" />
+                      <div>
+                        <h5 className="text-sm font-bold text-white">{f.title}</h5>
+                        <p className="text-xs text-slate-400 mt-1">{f.description}</p>
+                        <p className="text-xs text-indigo-400 mt-1.5 font-medium"><strong>Fix:</strong> {f.remediation}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Technical SEO Card */}
+          <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+            <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+              <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+                <Globe className="h-5 w-5 text-indigo-400" /> Technical SEO Diagnostics
+                <span className="ml-auto text-xs font-normal text-slate-400">
+                  Score: {result.seoData?.seoScore ?? 100}/100
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 space-y-6">
+              {/* Metadata Details */}
+              {result.seoData?.details && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div>
+                      <span className="text-slate-500 text-[10px] uppercase font-bold block">Page Title</span>
+                      <p className="text-sm text-slate-200 mt-1 font-semibold">
+                        {result.seoData.details.title?.exists ? result.seoData.details.title.value : <span className="text-red-400 font-bold">Missing Title</span>}
+                      </p>
+                      {result.seoData.details.title?.exists && (
+                        <span className="text-[10px] text-slate-450 mt-0.5 block">{result.seoData.details.title.length} characters</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-slate-500 text-[10px] uppercase font-bold block">Meta Description</span>
+                      <p className="text-sm text-slate-200 mt-1">
+                        {result.seoData.details.description?.exists ? result.seoData.details.description.value : <span className="text-red-400 font-bold">Missing Meta Description</span>}
+                      </p>
+                      {result.seoData.details.description?.exists && (
+                        <span className="text-[10px] text-slate-450 mt-0.5 block">{result.seoData.details.description.length} characters</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <span className="text-slate-500 text-[10px] uppercase font-bold block">Canonical Link</span>
+                        <span className="text-xs text-slate-350 font-mono mt-1 block truncate">
+                          {result.seoData.details.canonical?.exists ? result.seoData.details.canonical.value : 'None'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 text-[10px] uppercase font-bold block">Mobile Viewport</span>
+                        <span className={`text-xs mt-1 block font-semibold ${result.seoData.details.viewport?.isMobileFriendly ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {result.seoData.details.viewport?.exists ? 'Configured' : 'Missing'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Structured Data & Schema */}
+                    <div>
+                      <span className="text-slate-500 text-[10px] uppercase font-bold block mb-2">Structured Data (Schema.org)</span>
+                      {result.seoData.details.structuredData?.exists ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {result.seoData.details.structuredData.types.map((type, idx) => (
+                            <span key={idx} className="text-[9px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full">
+                              {type}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-550 block">No structured schemas detected.</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sitemap compare gaps */}
+              {result.seoData?.details?.sitemap?.missingUrls && result.seoData.details.sitemap.missingUrls.length > 0 && (
+                <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
+                  <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Crawled URLs Missing from sitemap.xml</h5>
+                  <div className="max-h-36 overflow-y-auto space-y-1 font-mono text-xs">
+                    {result.seoData.details.sitemap.missingUrls.map((url, idx) => (
+                      <div key={idx} className="text-slate-350 truncate">{url}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* AI Search Engine & GEO Optimization Card */}
+          <Card className="border border-slate-800 bg-slate-900/60 shadow-2xl p-6 sm:p-8 rounded-3xl">
+            <CardHeader className="p-0 pb-4 border-b border-slate-800 mb-6">
+              <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-indigo-400" /> AI Search & GEO Optimization
+                <span className="ml-auto text-xs font-normal text-slate-400">
+                  Readiness Score: {result.aiSearchData?.aiSearchScore ?? 100}/100
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <span className="text-slate-500 text-[10px] uppercase font-bold block">Brand Entity Schema</span>
+                    <span className={`text-xs mt-1 block font-semibold ${result.aiSearchData?.details?.organizationFound ? 'text-emerald-400' : 'text-amber-500'}`}>
+                      {result.aiSearchData?.details?.organizationFound ? 'Detected: Brand profile declared' : 'Not Declared: Generative engines cannot compile brand metadata.'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[10px] uppercase font-bold block">Citation Signals Density</span>
+                    <span className="text-xs text-slate-200 mt-1 block">
+                      Found <strong>{result.aiSearchData?.details?.citationsCount || 0}</strong> quantitative data points (dates, metrics, stats).
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <span className="text-slate-500 text-[10px] uppercase font-bold block">Topic Entity Consistency</span>
+                    <span className={`text-xs mt-1 block font-semibold ${result.aiSearchData?.details?.entityConsistency === 'high' ? 'text-emerald-400' : 'text-amber-500'}`}>
+                      {result.aiSearchData?.details?.entityConsistency ? result.aiSearchData.details.entityConsistency.toUpperCase() : 'MEDIUM'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[10px] uppercase font-bold block">Structured QA / FAQ Block</span>
+                    <span className={`text-xs mt-1 block font-semibold ${result.aiSearchData?.details?.faqFound ? 'text-emerald-400' : 'text-slate-400'}`}>
+                      {result.aiSearchData?.details?.faqFound ? 'Active FAQ Schema found' : 'None detected'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* FAQ opportunities list */}
+              {result.aiSearchData?.details?.faqOpportunities && result.aiSearchData.details.faqOpportunities.length > 0 && (
+                <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
+                  <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">FAQ Opportunities (Add Schema to these Questions)</h5>
+                  <div className="max-h-36 overflow-y-auto space-y-2">
+                    {result.aiSearchData.details.faqOpportunities.map((question, idx) => (
+                      <div key={idx} className="text-xs text-indigo-350 font-semibold bg-indigo-500/5 border border-indigo-500/10 px-3 py-1.5 rounded-lg truncate">
+                        Q: {question}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       {/* Positives Card */}
       {positives.length > 0 && (

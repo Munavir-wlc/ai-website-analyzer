@@ -4,6 +4,10 @@ const crawler = require('./crawler');
 const securityAnalyzer = require('./securityAnalyzer');
 const reportGenerator = require('./reportGenerator');
 const { crawlSite } = require('./siteCrawler');
+const performanceAnalyzer = require('./performanceAnalyzer');
+const accessibilityAnalyzer = require('./accessibilityAnalyzer');
+const seoAnalyzer = require('./seoAnalyzer');
+const aiSearchAnalyzer = require('./aiSearchAnalyzer');
 const { auditActiveVulnerabilities } = require('./activeScanner');
 const { auditLoadResilience } = require('./loadTester');
 const { executeZapScan } = require('./zapScanner');
@@ -166,9 +170,10 @@ async function processScanJob(data) {
     });
 
     // 3. Run multi-page crawl checks (mixed-content and cookies flags)
+    let siteCrawl = null;
     try {
       console.log(`[scanWorker] [${scanId}] Initiating multi-page audit via siteCrawler`);
-      const siteCrawl = await crawlSite(normalizedUrl, authOptions);
+      siteCrawl = await crawlSite(normalizedUrl, authOptions);
       if (siteCrawl && siteCrawl.pages && siteCrawl.pages.length > 1) {
         const cheerio = require('cheerio');
         for (const page of siteCrawl.pages) {
@@ -243,6 +248,40 @@ async function processScanJob(data) {
       }
     } catch (err) {
       console.error('Multi-page crawl security audit failed:', err);
+    }
+
+    // Run new audits (performance, accessibility, SEO, AI search)
+    let performanceResult = { opportunities: [], diagnostics: [], performanceScore: 100 };
+    let accessibilityResult = { findings: [], accessibilityScore: 100 };
+    let seoResult = { findings: [], seoScore: 100, details: {} };
+    let aiSearchResult = { findings: [], aiSearchScore: 100, details: {} };
+
+    try {
+      emitStep('crawling', 'in_progress', { message: 'Running Performance and Speed Index checks...' });
+      performanceResult = await performanceAnalyzer.analyzePerformance(normalizedUrl, authOptions);
+    } catch (err) {
+      console.error('Performance analysis failed:', err);
+    }
+
+    try {
+      emitStep('dns_check', 'in_progress', { message: 'Auditing WCAG accessibility standards...' });
+      accessibilityResult = await accessibilityAnalyzer.analyzeAccessibility(crawlerResult, siteCrawl);
+    } catch (err) {
+      console.error('Accessibility analysis failed:', err);
+    }
+
+    try {
+      emitStep('robots_check', 'in_progress', { message: 'Evaluating sitemap and technical SEO standards...' });
+      seoResult = await seoAnalyzer.analyzeSeo(crawlerResult, siteCrawl);
+    } catch (err) {
+      console.error('SEO analysis failed:', err);
+    }
+
+    try {
+      emitStep('ai_analysis', 'in_progress', { message: 'Analyzing AI Search and GEO visibility...' });
+      aiSearchResult = await aiSearchAnalyzer.analyzeAiSearch(crawlerResult, siteCrawl);
+    } catch (err) {
+      console.error('AI Search/GEO analysis failed:', err);
     }
 
     // 4. Active forms probing
@@ -343,6 +382,11 @@ async function processScanJob(data) {
     const scanDuration = parseFloat(((Date.now() - (startTime || Date.now())) / 1000).toFixed(2));
     const report = reportGenerator.generateReport({
       securityResult,
+      performanceResult,
+      accessibilityResult,
+      seoResult,
+      aiSearchResult,
+      crawlerResult,
       url: crawlerResult.url,
       scanDuration,
       scanMode: 'full',

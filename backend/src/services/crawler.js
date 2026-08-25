@@ -113,6 +113,8 @@ async function safeRequest(initialUrl, axiosConfig = {}, maxHops = 5) {
       method: currentMethod,
       maxRedirects: 0, // Block Axios from following redirects internally
       validateStatus: () => true, // Don't throw on status codes
+      maxContentLength: 5 * 1024 * 1024, // 5MB limit
+      maxBodyLength: 5 * 1024 * 1024,
       httpAgent,
       httpsAgent
     };

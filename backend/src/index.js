@@ -20,6 +20,9 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
+const { validateEnv } = require('./utils/envValidator');
+validateEnv();
+
 // Node 18 compatibility: undici (from workspace hoisting) expects global File
 if (typeof globalThis.File === 'undefined') {
   globalThis.File = class File {};

@@ -1,12 +1,26 @@
-# AI Website Security VAPT Scanner
+# AI Website Security & GEO Auditor
 
-An AI-assisted vulnerability and passive reconnaissance scanning suite for web applications.
+An advanced AI-assisted vulnerability scanning, passive reconnaissance, WCAG accessibility, performance diagnostics, and Generative Engine Optimization (GEO) auditing suite for modern web applications.
+
+---
+
+## Key Features
+
+1. **Security Configuration Audit**: Probes SSL/TLS settings, CORS configurations, security headers, cookie properties, mixed HTTP/HTTPS assets, and open ports.
+2. **Performance Diagnostics**: Measures First Contentful Paint (FCP), Time to First Byte (TTFB), and load duration heuristics via Puppeteer and static asset counting.
+3. **Accessibility Audit (WCAG)**: Scans HTML structures for missing image alt tags, missing form labels, invalid heading hierarchies, and keyboard focus access.
+4. **Technical SEO Diagnostics**: Evaluates titles, descriptions, canonical URLs, viewport settings, robots meta, sitemap XML declarations, and reports broken links.
+5. **AI Search & GEO Optimization**: Grades LLM search engine discoverability by auditing Brand Entity Schemas, FAQ opportunities, citation density, and entity consistency.
+6. **Unified Deterministic Scoring**: Computes letter grades (A+ through F) and weighted numeric sub-scores for all categories.
+7. **CSV & JSON Exports**: Provides downloadable spreadsheets of all security and audit findings.
+
+---
 
 ## Prerequisites
 
 - **Node.js**: `>=18.0.0`
-- **MongoDB**: Running locally on port `27017`
-- **Docker / Colima**: For running OWASP ZAP
+- **MongoDB**: Running locally on port `27017` (tests run decoupled using `mongodb-memory-server`)
+- **Docker / Colima**: Required for running OWASP ZAP
 
 ---
 
@@ -15,75 +29,57 @@ An AI-assisted vulnerability and passive reconnaissance scanning suite for web a
 ### 1. Install Dependencies
 ```bash
 pnpm install
-# or
-npm install
 ```
 
-### 2. Start OWASP ZAP (Port 8090)
-
-Choose the setup steps below depending on whether you are using **Docker Desktop** or **Colima**:
-
-#### **Option A: Using Docker Desktop**
-Just make sure Docker Desktop is running, then run:
-```bash
-docker rm -f zap-local 2>/dev/null || true && \
-docker run -d --name zap-local -p 8090:8090 -e ZAP_JVM_OPTIONS="-Xmx1536m -Xms256m" --add-host host.docker.internal:host-gateway ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.key=vapt_scanner_zap_api_key_2026_xyz -config 'api.addrs.addr.name=.*' -config api.addrs.addr.regex=true
-```
-
-#### **Option B: Using Colima**
-If you are using **Colima** on macOS:
-1. **Start Colima** with at least 4GB of RAM (ZAP is resource-intensive and will crash on default VM settings):
-   ```bash
-   colima start --cpu 2 --memory 4
-   ```
-2. **Point to Colima Docker context**:
-   ```bash
-   docker context use colima
-   ```
-3. **Start the ZAP container**:
-   ```bash
-   docker rm -f zap-local 2>/dev/null || true && \
-   docker run -d --name zap-local -p 8090:8090 -e ZAP_JVM_OPTIONS="-Xmx1536m -Xms256m" --add-host host.docker.internal:host-gateway ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.key=vapt_scanner_zap_api_key_2026_xyz -config 'api.addrs.addr.name=.*' -config api.addrs.addr.regex=true
-   ```
-   *(Note: The `--add-host host.docker.internal:host-gateway` flag is critical here, enabling ZAP inside the Colima VM to scan local targets running on your host Mac).*
-
----
-*(After running the ZAP container, wait ~45 seconds for it to start up, then verify it is running with: `curl -s -H "X-ZAP-API-Key: vapt_scanner_zap_api_key_2026_xyz" http://localhost:8090/JSON/core/view/version/`)*
-
-
-
-### 3. Configure Environment
+### 2. Configure Environment
 Create a `.env` file in the `backend/` directory:
 ```env
 PORT=4000
 MONGODB_URI=mongodb://localhost:27017/ai-website-analyzer
+JWT_SECRET=your_jwt_secret_token_here
 OPENAI_API_KEY=your_openai_api_key_here
 ENABLE_ZAP_SCANS=true
 ZAP_API_KEY=vapt_scanner_zap_api_key_2026_xyz
 ALLOW_LOCAL_SCANS=true
 ```
 
-### 4. Run Development Server
+### 3. Run Development Servers
 ```bash
 pnpm dev
-# or
-npm run dev
 ```
-Starts the Express API on port `4000` and the Next.js Frontend on port `3000` (or `3001`).
+Starts the Express backend on port `4000` and the Next.js frontend on port `3000`.
+
+---
+
+## Running Tests
+
+We utilize Jest for backend testing. Database integrations are run decoupled from your local MongoDB instance using an in-memory database server helper.
+
+To run all unit and integration tests:
+```bash
+cd backend
+pnpm test
+```
 
 ---
 
 ## API Documentation
 
 ### **POST** `/api/scan`
-Launches a security scan for a target URL.
+Launches a security and diagnostics audit scan for a target website.
 
-**Payload:**
+**Parameters:**
+- `url` (string, required): Domain or page URL.
+- `consent` (boolean, required): User consent acknowledgement.
+- `mode` (string, optional): `"quick"` or `"full"`.
+- `force` (boolean, optional): Set to `true` to bypass the 6-hour report caching.
+
+**Sample Request Payload:**
 ```json
 {
   "url": "https://example.com",
   "consent": true,
-  "mode": "full"
+  "mode": "full",
+  "force": true
 }
 ```
-*(Note: `consent` is mandatory for active security probing.)*

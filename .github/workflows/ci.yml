@@ -1,0 +1,47 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main, feature-expansion, security-lockdown ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-size: 18
+          node-version: '18.x'
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install Workspace Dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Verify Backend Unit Tests
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test_jwt_secret_key_1234567890
+          REDIS_URL: redis://localhost:6379
+        run: |
+          cd backend
+          pnpm test

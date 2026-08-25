@@ -5,6 +5,10 @@ const crawler = require('../services/crawler');
 const securityAnalyzer = require('../services/securityAnalyzer');
 const reportGenerator = require('../services/reportGenerator');
 const { crawlSite } = require('../services/siteCrawler');
+const performanceAnalyzer = require('../services/performanceAnalyzer');
+const accessibilityAnalyzer = require('../services/accessibilityAnalyzer');
+const seoAnalyzer = require('../services/seoAnalyzer');
+const aiSearchAnalyzer = require('../services/aiSearchAnalyzer');
 const { auditActiveVulnerabilities } = require('../services/activeScanner');
 const { auditLoadResilience } = require('../services/loadTester');
 const { isSafeUrl } = require('../utils/ssrfGuard');
@@ -17,6 +21,7 @@ const { scanCdnLibraries } = require('../services/cveScanner');
 const { scanSubdomains } = require('../services/subdomainScanner');
 const { addScanJob } = require('../services/scanQueue');
 const { generateReportPDF } = require('../services/pdfGenerator');
+const Scan = require('../models/Scan');
 
 async function checkScanAccess(scan, user) {
   // If public
@@ -515,6 +520,29 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
       return res.status(400).json({ error: 'URL blocked: Private, local, or loopback network addresses are not permitted.' });
     }
 
+    // 6-hour Cache Check (Performance Optimization)
+    const forceRescan = req.query.force === 'true' || req.body.force === 'true';
+    if (!forceRescan) {
+      const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
+      const existingScan = await Scan.findOne({
+        url: normalizedUrl,
+        createdAt: { $gte: sixHoursAgo },
+        score: { $exists: true }
+      }).sort({ createdAt: -1 });
+
+      if (existingScan) {
+        console.log(`[scan] Cache hit for URL: ${normalizedUrl}. Returning existing scan ID: ${existingScan.scanId}`);
+        return res.status(200).json({
+          scanId: existingScan.scanId,
+          status: 'cached',
+          message: 'Recent scan results found in cache.',
+          score: existingScan.score,
+          grade: existingScan.grade,
+          report: existingScan.report
+        });
+      }
+    }
+
     // Get io instance
     const io = req.app.get('io');
     const clientSocket = io && socketId ? io.to(socketId) : null;
@@ -758,11 +786,50 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
       emitStep('subdomain_scan', 'failed');
     }
 
+    // Run new audits (performance, accessibility, SEO, AI search)
+    let performanceResult = { opportunities: [], diagnostics: [], performanceScore: 100 };
+    let accessibilityResult = { findings: [], accessibilityScore: 100 };
+    let seoResult = { findings: [], seoScore: 100, details: {} };
+    let aiSearchResult = { findings: [], aiSearchScore: 100, details: {} };
+
+    try {
+      emitStep('crawling', 'in_progress', { message: 'Running Performance and Speed Index checks...' });
+      performanceResult = await performanceAnalyzer.analyzePerformance(normalizedUrl, authOptions);
+    } catch (err) {
+      console.error('Performance analysis failed:', err);
+    }
+
+    try {
+      emitStep('dns_check', 'in_progress', { message: 'Auditing WCAG accessibility standards...' });
+      accessibilityResult = await accessibilityAnalyzer.analyzeAccessibility(crawlerResult, siteCrawl);
+    } catch (err) {
+      console.error('Accessibility analysis failed:', err);
+    }
+
+    try {
+      emitStep('robots_check', 'in_progress', { message: 'Evaluating sitemap and technical SEO standards...' });
+      seoResult = await seoAnalyzer.analyzeSeo(crawlerResult, siteCrawl);
+    } catch (err) {
+      console.error('SEO analysis failed:', err);
+    }
+
+    try {
+      emitStep('ai_analysis', 'in_progress', { message: 'Analyzing AI Search and GEO visibility...' });
+      aiSearchResult = await aiSearchAnalyzer.analyzeAiSearch(crawlerResult, siteCrawl);
+    } catch (err) {
+      console.error('AI Search/GEO analysis failed:', err);
+    }
+
     const scanDuration = parseFloat(((Date.now() - startTime) / 1000).toFixed(2));
 
     // Generate the report
     const report = reportGenerator.generateReport({
       securityResult,
+      performanceResult,
+      accessibilityResult,
+      seoResult,
+      aiSearchResult,
+      crawlerResult,
       url: crawlerResult.url,
       scanDuration,
       scanMode,
