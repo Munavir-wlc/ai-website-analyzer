@@ -18,6 +18,44 @@ const { scanSubdomains } = require('../services/subdomainScanner');
 const { addScanJob } = require('../services/scanQueue');
 const { generateReportPDF } = require('../services/pdfGenerator');
 
+async function checkScanAccess(scan, user) {
+  // If public
+  if (scan.isPublic) {
+    return {
+      allowed: true,
+      belongsToCurrentUser: !!(user && scan.userId && scan.userId.toString() === user._id.toString()),
+      isGuest: false
+    };
+  }
+  
+  // If guest scan (no owner)
+  if (!scan.userId && !scan.teamId) {
+    return { allowed: true, belongsToCurrentUser: false, isGuest: true };
+  }
+  
+  // If user is authenticated
+  if (user) {
+    // If owner
+    if (scan.userId && scan.userId.toString() === user._id.toString()) {
+      return { allowed: true, belongsToCurrentUser: true, isGuest: false };
+    }
+    
+    // If part of team
+    if (scan.teamId) {
+      const Team = require('../models/Team');
+      const isMember = await Team.exists({
+        _id: scan.teamId,
+        'members.userId': user._id
+      });
+      if (isMember) {
+        return { allowed: true, belongsToCurrentUser: false, isGuest: false };
+      }
+    }
+  }
+  
+  return { allowed: false };
+}
+
 function buildFinalReport(scanId, report, scanStatus = {}) {
   return {
     scanId,
@@ -50,8 +88,6 @@ function buildFinalReport(scanId, report, scanStatus = {}) {
     headersGrade: report.headersGrade,
     loadTestData: report.loadTestData,
     zapScanData: report.zapScanData,
-    authCookie: report.authCookie || '',
-    authHeader: report.authHeader || '',
     crawledPages: report.crawledPages || [],
     subdomainData: report.subdomainData || { scanned: false, discovered: [], sensitiveFound: [], totalDiscovered: 0 },
     scanStatus
@@ -107,55 +143,40 @@ router.get('/results/:scanId', optionalAuth, async (req, res) => {
       return res.status(404).json({ error: 'Scan report not found or expired.' });
     }
 
-    // A. Allow read-only access for publicly shared reports
-    if (scan.isPublic) {
-      console.log(`[scanRoutes] Returning public shared report for ID: ${scanId}`);
-      const belongsToCurrentUser = !!(req.user && scan.userId && scan.userId.toString() === req.user._id.toString());
+    const access = await checkScanAccess(scan, req.user);
+    if (!access.allowed) {
+      return res.status(req.user ? 403 : 401).json({ error: req.user ? 'You are not authorized to view this report.' : 'Authentication required to view this report.' });
+    }
+
+    // If it was a guest scan and a user is logged in, claim it!
+    if (access.isGuest && req.user) {
+      scan.userId = req.user._id;
+      scan.expiresAt = null; // Claimed scans should never expire
+      await scan.save();
+      access.belongsToCurrentUser = true;
+      access.isGuest = false;
+      console.log(`[scanRoutes] Guest scan ${scanId} claimed by user ${req.user._id}`);
+    }
+
+    if (access.isGuest) {
+      // Return masked report for guests
+      console.log(`[scanRoutes] Returning masked guest scan report for ID: ${scanId}`);
       return res.json({
-        ...scan.report,
-        scanId: scan.scanId,
-        teamId: scan.teamId,
-        isPublic: true,
-        belongsToCurrentUser
+        ...maskReportForGuests(scan.report),
+        isPublic: false,
+        belongsToCurrentUser: false
       });
     }
 
-    // If request is authenticated
-    if (req.user) {
-      // If scan currently has no owner (guest scan), claim it!
-      if (!scan.userId) {
-        scan.userId = req.user._id;
-        scan.expiresAt = null; // Claimed scans should never expire
-        await scan.save();
-        console.log(`[scanRoutes] Guest scan ${scanId} claimed by user ${req.user._id}`);
-      } else if (scan.userId.toString() !== req.user._id.toString()) {
-        // If scan belongs to someone else
-        return res.status(403).json({ error: 'You are not authorized to view this report.' });
-      }
-      
-      console.log(`[scanRoutes] Scan report found successfully for ID: ${scanId}`);
-      return res.json({
-        ...scan.report,
-        scanId: scan.scanId,
-        teamId: scan.teamId,
-        isPublic: !!scan.isPublic,
-        belongsToCurrentUser: true,
-        findingStatuses: scan.findingStatuses ? Object.fromEntries(scan.findingStatuses) : {}
-      });
-    }
-
-    // If request is NOT authenticated (Guest)
-    if (scan.userId) {
-      // If scan belongs to a user, guests cannot view it at all
-      return res.status(401).json({ error: 'Authentication required to view this report.' });
-    }
-
-    // Return masked report for guests (no local scans bypass)
-    console.log(`[scanRoutes] Returning masked guest scan report for ID: ${scanId}`);
+    // Return full report for authorized users/teams
+    console.log(`[scanRoutes] Scan report found successfully for ID: ${scanId}`);
     res.json({
-      ...maskReportForGuests(scan.report),
-      isPublic: false,
-      belongsToCurrentUser: false
+      ...scan.report,
+      scanId: scan.scanId,
+      teamId: scan.teamId,
+      isPublic: !!scan.isPublic,
+      belongsToCurrentUser: access.belongsToCurrentUser,
+      findingStatuses: scan.findingStatuses ? Object.fromEntries(scan.findingStatuses) : {}
     });
   } catch (err) {
     console.error(`[scanRoutes] Failed to read scan report ${scanId}:`, err);
@@ -430,12 +451,24 @@ router.get('/compare', protect, async (req, res) => {
 });
 
 // POST /api/scan/chat - AI Vulnerability Assistant Chat
-router.post('/chat', async (req, res) => {
-  const { finding, messages } = req.body;
-  if (!finding || !finding.title) {
-    return res.status(400).json({ error: 'Finding context is required.' });
+router.post('/chat', optionalAuth, async (req, res) => {
+  const { scanId, finding, messages } = req.body;
+  if (!finding || !finding.title || !scanId) {
+    return res.status(400).json({ error: 'Finding context and scanId are required.' });
   }
   try {
+    const Scan = require('../models/Scan');
+    const scan = await Scan.findOne({ scanId });
+    if (!scan) {
+      return res.status(404).json({ error: 'Associated scan report not found.' });
+    }
+
+    // Verify access permissions to the scan report
+    const access = await checkScanAccess(scan, req.user);
+    if (!access.allowed) {
+      return res.status(req.user ? 403 : 401).json({ error: req.user ? 'You are not authorized to access this scan context.' : 'Authentication required to access this scan context.' });
+    }
+
     const { chatWithFindingAssistant } = require('../services/aiEngine');
     const reply = await chatWithFindingAssistant(finding, messages || []);
     res.json({ reply });
@@ -790,12 +823,30 @@ router.post('/results/:scanId/share', protect, async (req, res) => {
 router.get(['/results/:scanId/pdf', '/:scanId/pdf'], optionalAuth, async (req, res) => {
   const { scanId } = req.params;
   try {
-    const reportData = await getReport(scanId);
-    if (!reportData) {
+    const Scan = require('../models/Scan');
+    const scan = await Scan.findOne({ scanId });
+    if (!scan) {
       return res.status(404).json({ error: 'Scan report not found' });
     }
 
-    const pdfBuffer = await generateReportPDF(reportData);
+    const access = await checkScanAccess(scan, req.user);
+    if (!access.allowed) {
+      return res.status(req.user ? 403 : 401).json({ error: req.user ? 'You are not authorized to view this report.' : 'Authentication required to view this report.' });
+    }
+
+    // Guest scans claim logic
+    if (access.isGuest && req.user) {
+      scan.userId = req.user._id;
+      scan.expiresAt = null;
+      await scan.save();
+      access.isGuest = false;
+    }
+
+    if (access.isGuest) {
+      return res.status(401).json({ error: 'Authentication required. Guests cannot download PDF reports.' });
+    }
+
+    const pdfBuffer = await generateReportPDF(scan.report);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=security-report-${scanId}.pdf`);

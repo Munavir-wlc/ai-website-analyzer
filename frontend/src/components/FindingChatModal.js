@@ -5,7 +5,7 @@ import { Sparkles, Send, X, Bot, User, Loader2, Copy, Check, AlertTriangle, Shie
 
 const MAX_MESSAGES = 10;
 
-export default function FindingChatModal({ finding, onClose }) {
+export default function FindingChatModal({ finding, scanId, onClose }) {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -48,6 +48,7 @@ export default function FindingChatModal({ finding, onClose }) {
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
+          scanId,
           finding,
           messages: newMessages.map(m => ({ role: m.role, content: m.content }))
         })

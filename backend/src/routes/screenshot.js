@@ -2,18 +2,20 @@ const express = require('express');
 const router = express.Router();
 const screenshotService = require('../services/screenshotService');
 const { isSafeUrl } = require('../utils/ssrfGuard');
+const { optionalAuth } = require('../middleware/auth');
+const { checkScanQuota } = require('../middleware/quotaGuard');
 
 /**
  * Screenshot API Route
- * GET /api/screenshot?url=https://example.com
+ * POST /api/screenshot
  */
 
-router.get('/', async (req, res) => {
+router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
   const startTime = Date.now();
   
   try {
     // Validate URL parameter
-    const { url, authCookie, authHeader } = req.query;
+    const { url, authCookie, authHeader } = req.body;
     if (!url) {
       return res.status(400).json({
         success: false,
@@ -85,7 +87,7 @@ router.get('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: err.message || 'Screenshot capture failed',
-      url: req.query.url || null,
+      url: req.body.url || null,
       desktop: null,
       mobile: null,
       timestamp: new Date().toISOString(),

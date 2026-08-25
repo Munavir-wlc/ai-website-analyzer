@@ -2260,6 +2260,7 @@ export default function AuditReport({ result, screenshots }) {
       {activeChatFinding && (
         <FindingChatModal
           finding={activeChatFinding}
+          scanId={result.scanId}
           onClose={() => setActiveChatFinding(null)}
         />
       )}

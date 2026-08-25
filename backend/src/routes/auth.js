@@ -191,13 +191,18 @@ router.post('/forgot-password', async (req, res) => {
       resetLink
     });
 
-    res.json({
+    const responsePayload = {
       success: true,
       message: 'Password reset instructions have been sent to your email address.',
-      emailSent: emailResult.success,
-      previewUrl: emailResult.previewUrl || null,
-      resetToken
-    });
+      emailSent: emailResult.success
+    };
+
+    if (process.env.NODE_ENV !== 'production') {
+      responsePayload.previewUrl = emailResult.previewUrl || null;
+      responsePayload.resetToken = resetToken;
+    }
+
+    res.json(responsePayload);
   } catch (error) {
     console.error('[Forgot Password Error]:', error);
     res.status(500).json({ error: 'Failed to process password reset request' });

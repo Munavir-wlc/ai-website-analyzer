@@ -69,8 +69,6 @@ function buildFinalReport(scanId, report, scanStatus = {}) {
     headersGrade: report.headersGrade,
     loadTestData: report.loadTestData,
     zapScanData: report.zapScanData,
-    authCookie: report.authCookie || '',
-    authHeader: report.authHeader || '',
     crawledPages: report.crawledPages || [],
     subdomainData: report.subdomainData || { scanned: false, discovered: [], sensitiveFound: [], totalDiscovered: 0 },
     scanStatus

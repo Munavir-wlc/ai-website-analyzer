@@ -123,14 +123,20 @@ export default function ResultsPage() {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
       const authCookie = result.authCookie || '';
       const authHeader = result.authHeader || '';
+      const token = localStorage.getItem('vapt_auth_token');
       
-      const queryParams = new URLSearchParams({
-        url: targetUrl,
-        authCookie,
-        authHeader
-      }).toString();
-
-      fetch(`${API_URL}/api/screenshot?${queryParams}`)
+      fetch(`${API_URL}/api/screenshot`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          url: targetUrl,
+          authCookie,
+          authHeader
+        })
+      })
         .then((res) => {
           if (!res.ok) {
             throw new Error(`Screenshot service returned status ${res.status}`);
