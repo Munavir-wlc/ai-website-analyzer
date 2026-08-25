@@ -109,7 +109,7 @@ app.use(helmet({
       frameAncestors: ["'self'"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
-      upgradeInsecureRequests: []
+      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
     }
   },
   frameguard: { action: 'sameorigin' },
