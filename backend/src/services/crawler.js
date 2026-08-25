@@ -63,10 +63,23 @@ async function resolveSafeIpAndGetAgents(hostname) {
 
   // Create a custom lookup function for this request
   const lookupFn = (hostToResolve, options, callback) => {
-    if (hostToResolve === hostname) {
-      return callback(null, pinnedIp, net.isIPv4(pinnedIp) ? 4 : 6);
+    let actualOptions = options;
+    let actualCallback = callback;
+    if (typeof options === 'function') {
+      actualCallback = options;
+      actualOptions = {};
     }
-    dns.lookup(hostToResolve, options, callback);
+
+    if (hostToResolve === hostname) {
+      const family = net.isIPv4(pinnedIp) ? 4 : 6;
+      if (actualOptions && actualOptions.all) {
+        return actualCallback(null, [{ address: pinnedIp, family }]);
+      }
+      return actualCallback(null, pinnedIp, family);
+    }
+    
+    const dnsCallback = require('dns');
+    dnsCallback.lookup(hostToResolve, actualOptions, actualCallback);
   };
 
   const httpAgent = new http.Agent({ lookup: lookupFn, keepAlive: false });
