@@ -43,75 +43,8 @@ async function generateRecommendations(report) {
   }
 }
 
-/**
- * Detects website technologies based on HTML content and response headers.
- */
-function detectTechnologies(html, headers) {
-  const cmsList = {
-    WordPress: /wp-content|wp-includes|wp-json/i,
-    Shopify: /shopify|cdn\.shopify\.com/i,
-    Wix: /wix\.com|wixpress/i,
-    Squarespace: /squarespace|static\.squarespace\.com/i,
-    Webflow: /webflow/i,
-    Joomla: /joomla/i,
-    Drupal: /drupal/i
-  };
+const { detectTechnologies } = require('./techFingerprint');
 
-  const frameworkList = {
-    React: /_next|react/i,
-    'Next.js': /_next/i,
-    Vue: /vue|nuxt/i,
-    Angular: /angular/i,
-    Laravel: /laravel|csrf-token/i,
-    Django: /django|csrfmiddlewaretoken/i
-  };
-
-  const serverList = {
-    nginx: /nginx/i,
-    Apache: /apache/i,
-    Cloudflare: /cloudflare|__cf_bm/i
-  };
-
-  const analyticsList = {
-    'Google Analytics': /google-analytics|googletagmanager/i,
-    'Facebook Pixel': /connect\.facebook\.net/i,
-    Hotjar: /hotjar/i,
-    Mixpanel: /mixpanel/i
-  };
-
-  const libraryList = {
-    jQuery: /jquery/i,
-    Bootstrap: /bootstrap/i,
-    Tailwind: /tailwind/i
-  };
-
-  const detect = (list, source) => {
-    const found = [];
-    for (const [name, regex] of Object.entries(list)) {
-      if (regex.test(source)) {
-        found.push(name);
-      }
-    }
-    return found;
-  };
-
-  const headerString = JSON.stringify(headers || {});
-  const source = (html || '') + '\n' + headerString;
-
-  const cms = detect(cmsList, source);
-  const framework = detect(frameworkList, source);
-  const server = detect(serverList, source);
-  if (headers && headers['server']) {
-    const s = headers['server'].toLowerCase();
-    if (s.includes('nginx') && !server.includes('nginx')) server.push('nginx');
-    if (s.includes('apache') && !server.includes('Apache')) server.push('Apache');
-    if (s.includes('cloudflare') && !server.includes('Cloudflare')) server.push('Cloudflare');
-  }
-  const analytics = detect(analyticsList, source);
-  const libraries = detect(libraryList, source);
-
-  return { cms, framework, server, analytics, libraries };
-}
 
 /**
  * Fallback static audits if OpenAI is unavailable (quota, timeout, API failures)

@@ -556,103 +556,6 @@ async function checkHttpMethods(url, auth = {}) {
   return results;
 }
 
-/**
- * Helper to check TCP port connection using a socket with a 2-second timeout
- */
-function checkPort(domain, port) {
-  return new Promise((resolve) => {
-    const socket = new net.Socket();
-    socket.setTimeout(2000);
-    
-    socket.on('connect', () => {
-      socket.destroy();
-      resolve({ port, open: true });
-    });
-    
-    socket.on('timeout', () => {
-      socket.destroy();
-      resolve({ port, open: false });
-    });
-    
-    socket.on('error', () => {
-      socket.destroy();
-      resolve({ port, open: false });
-    });
-    
-    socket.connect(port, domain);
-  });
-}
-
-/**
- * Scan standard administrative and database ports to check public exposure
- */
-async function portScan(domain) {
-  const ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 1433, 3306, 3389, 5432, 6379, 27017, 8080];
-  const services = {
-    21: { name: 'FTP', dangerous: true },
-    22: { name: 'SSH', dangerous: true },
-    23: { name: 'Telnet', dangerous: true },
-    25: { name: 'SMTP', dangerous: false },
-    53: { name: 'DNS', dangerous: false },
-    80: { name: 'HTTP', dangerous: false },
-    110: { name: 'POP3', dangerous: false },
-    143: { name: 'IMAP', dangerous: false },
-    443: { name: 'HTTPS', dangerous: false },
-    445: { name: 'SMB', dangerous: true },
-    1433: { name: 'MSSQL', dangerous: true },
-    3306: { name: 'MySQL', dangerous: true },
-    3389: { name: 'RDP', dangerous: true },
-    5432: { name: 'Postgres', dangerous: true },
-    6379: { name: 'Redis', dangerous: true },
-    27017: { name: 'MongoDB', dangerous: true },
-    8080: { name: 'HTTP-Alt', dangerous: true }
-  };
-
-  const cleanDomain = (() => {
-    try {
-      if (/^https?:\/\//i.test(domain)) {
-        return new URL(domain).hostname;
-      }
-      return domain;
-    } catch (_) {
-      return domain;
-    }
-  })();
-
-  if (!await isSafeUrl(cleanDomain)) {
-    return {
-      scanned: false,
-      openPorts: [],
-      totalScanned: 0,
-      error: 'Blocked by SSRF guard'
-    };
-  }
-
-  try {
-    const results = await Promise.all(ports.map(port => checkPort(cleanDomain, port)));
-    const openPorts = results.filter(r => r.open).map(r => {
-      const svc = services[r.port];
-      return {
-        port: r.port,
-        service: svc.name,
-        dangerous: svc.dangerous
-      };
-    });
-    
-    return {
-      scanned: true,
-      openPorts,
-      totalScanned: ports.length
-    };
-  } catch (err) {
-    return {
-      scanned: false,
-      openPorts: [],
-      totalScanned: 0,
-      error: err.message
-    };
-  }
-}
 
 /**
  * Manually trace HTTP redirect chain up to 10 hops
@@ -812,7 +715,6 @@ module.exports = {
   checkDNS,
   checkExposedFiles,
   checkHttpMethods,
-  portScan,
   analyzeRedirects,
   whoisLookup
 };

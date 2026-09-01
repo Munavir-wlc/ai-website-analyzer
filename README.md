@@ -6,7 +6,7 @@ An advanced AI-assisted vulnerability scanning, passive reconnaissance, WCAG acc
 
 ## Key Features
 
-1. **Security Configuration Audit**: Probes SSL/TLS settings, CORS configurations, security headers, cookie properties, mixed HTTP/HTTPS assets, and open ports.
+1. **Security Configuration & CVE Audit**: Probes SSL/TLS settings, CORS configurations, security headers, cookie properties, mixed HTTP/HTTPS assets, passive technology fingerprinting, and real-time OSV.dev CVE matching.
 2. **Performance Diagnostics**: Measures First Contentful Paint (FCP), Time to First Byte (TTFB), and load duration heuristics via Puppeteer and static asset counting.
 3. **Accessibility Audit (WCAG)**: Scans HTML structures for missing image alt tags, missing form labels, invalid heading hierarchies, and keyboard focus access.
 4. **Technical SEO Diagnostics**: Evaluates titles, descriptions, canonical URLs, viewport settings, robots meta, sitemap XML declarations, and reports broken links.

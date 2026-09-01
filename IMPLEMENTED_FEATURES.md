@@ -59,16 +59,16 @@ This document reports the completed implementations for the AI Website Analyser 
 
 ## 🚀 Phase 2 VAPT Upgrades (Passive Recon & Auditing)
 
-### 1. New Passive Auditors (`backend/src/services/crawler.js`)
+### 1. New Passive Auditors (`backend/src/services/crawler.js`, `backend/src/services/techFingerprint.js`, `backend/src/services/cveScanner.js`)
 * **`fetchRobotsTxt`**: Downloads and parses `robots.txt` paths to isolate disallowed sensitive endpoints (`/admin`, `/api`, `/config`, etc.).
 * **`analyzeRedirects`**: Traces HTTP redirect loops and hops up to 10 iterations manually via `axios` (`maxRedirects: 0`). Analyzes HTTPS redirection and open redirect domain drifts.
 * **`whoisLookup`**: Resolves domain registration parameters (registrar details, creation dates, expiration schedules) using the `whoiser` TCP port 43 client.
-* **`portScan`**: Scans 15 administrative and database ports (including SSH, FTP, Telnet, MySQL, Postgres, MSSQL, RDP, SMB) with a strict 2-second timeout per socket.
+* **`techFingerprint` & `cveScanner`**: Passively fingerprints software, CMS, and frameworks from headers, meta tags, and script paths, and matches detected versions against the OSV.dev vulnerability database with 24-hour response caching.
 
 ### 2. Upgraded Security Scoring (`backend/src/services/securityAnalyzer.js`)
-* Executes Phase 2 audits concurrently using `Promise.all` while forwarding individual event status updates sequentially to socket handlers.
+* Executes passive audits concurrently using `Promise.all` while forwarding individual event status updates sequentially to socket handlers.
 * Implemented new severity scoring deductions:
-  * Open dangerous port: `-15` (high)
+  * CVE vulnerability match: `-20` (critical), `-15` (high), `-8` (medium), `-4` (low)
   * Missing HTTPS redirection: `-20` (critical)
   * Domain expiring < 30 days: `-15` (high); < 7 days: `-20` (critical)
   * Sensitive robots.txt paths: `-5` each (max `-20`, medium)
