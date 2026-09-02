@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
 import { useWorkspace } from '../lib/WorkspaceContext';
-import { BarChart3, Shield, FileText, LayoutDashboard, LogIn, LogOut, Sun, Moon, Users, Sparkles, ChevronDown, Check, User } from 'lucide-react';
+import { BarChart3, Shield, ShieldCheck, FileText, LayoutDashboard, LogIn, LogOut, Sun, Moon, Users, Sparkles, ChevronDown, Check, User, Globe } from 'lucide-react';
 import { Button } from './ui/Button';
 
 const navItems = [
@@ -131,6 +131,15 @@ export default function Navbar() {
           )}
           {user && (
             <Link
+              href="/domains"
+              className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-slate-650 dark:text-slate-400 transition-colors hover:bg-slate-105 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white"
+            >
+              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              Domains
+            </Link>
+          )}
+          {user && (
+            <Link
               href="/team"
               className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-slate-650 dark:text-slate-400 transition-colors hover:bg-slate-105 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white"
             >
@@ -200,6 +209,14 @@ export default function Navbar() {
                       >
                         <LayoutDashboard className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                         Dashboard
+                      </Link>
+                      <Link
+                        href="/domains"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-105 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors"
+                      >
+                        <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                        Domains
                       </Link>
                       <Link
                         href="/team"

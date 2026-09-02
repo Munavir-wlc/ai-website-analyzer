@@ -40,6 +40,7 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
 const teamRoutes = require('./routes/team');
 const paymentRoutes = require('./routes/payment');
+const domainRoutes = require('./routes/domain');
 const { setIo } = require('./utils/socket');
 const { initScanWorker } = require('./services/scanWorker');
 
@@ -162,6 +163,9 @@ app.use('/api/team', teamRoutes);
 
 // Payments & Subscriptions API
 app.use('/api/payment', paymentRoutes);
+
+// Domain Ownership Verification API
+app.use('/api/domains', domainRoutes);
 
 // Screenshot API - 5 per minute (Puppeteer is heavy)
 const screenshotLimiter = rateLimit({

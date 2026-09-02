@@ -22,6 +22,7 @@ const { scanSubdomains } = require('../services/subdomainScanner');
 const { addScanJob } = require('../services/scanQueue');
 const { generateReportPDF } = require('../services/pdfGenerator');
 const Scan = require('../models/Scan');
+const Domain = require('../models/Domain');
 
 async function checkScanAccess(scan, user) {
   // If public
@@ -500,17 +501,12 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
     }
 
     const hasConsent = !!consent;
-    const scanMode = mode || 'full'; // 'quick' or 'full'
+    const scanMode = mode || 'full'; // 'quick', 'passive', 'full', 'active', 'verified'
     const throttleDelay = Math.min(5000, Math.max(0, parseInt(delay, 10) || 0));
     const useAuthenticatedScan = capabilities.authenticatedScans;
     const authOptions = useAuthenticatedScan ? { authCookie, authHeader } : {};
     authCookie = authOptions.authCookie || '';
     authHeader = authOptions.authHeader || '';
-    const shouldRunActive = scanMode === 'full' && capabilities.activeScans;
-    const shouldRunLoadTest = scanMode === 'full' && capabilities.loadTesting;
-    const shouldRunZap = scanMode === 'full' && capabilities.zapScans; // Automatically enable ZAP for every deep scan if enabled
-    const runAi = capabilities.aiFindings && hasConsent && scanMode === 'full';
-    let activeScanData = { scanned: false, status: scanMode === 'full' && !capabilities.activeScans ? 'disabled' : 'not_applicable', findingsCount: 0 };
 
     // Normalize URL
     const normalizedUrl = crawler.normalizeUrl(url);
@@ -519,6 +515,41 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
     if (!await isSafeUrl(normalizedUrl)) {
       return res.status(400).json({ error: 'URL blocked: Private, local, or loopback network addresses are not permitted.' });
     }
+
+    // Extract hostname for domain verification check
+    let targetHostname = '';
+    try {
+      targetHostname = new URL(normalizedUrl).hostname.toLowerCase();
+    } catch (_) {
+      targetHostname = normalizedUrl.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0].toLowerCase();
+    }
+
+    let isDomainVerified = false;
+    if (userId && targetHostname) {
+      const verifiedDomain = await Domain.findOne({ userId, hostname: targetHostname, verified: true });
+      isDomainVerified = !!verifiedDomain;
+    }
+
+    // Explicit active/verified scan mode gating: reject if domain is unverified
+    const isExplicitActive = scanMode === 'active' || scanMode === 'verified';
+    if (isExplicitActive && !isDomainVerified) {
+      return res.status(403).json({
+        error: 'Domain ownership verification required for active scanning. Please verify domain ownership under /domains first.',
+        unverifiedDomain: targetHostname
+      });
+    }
+
+    const isPassiveOnly = scanMode === 'quick' || scanMode === 'passive';
+    const activeAllowed = isDomainVerified;
+    const shouldRunActive = !isPassiveOnly && activeAllowed && capabilities.activeScans;
+    const shouldRunLoadTest = !isPassiveOnly && activeAllowed && capabilities.loadTesting;
+    const shouldRunZap = !isPassiveOnly && activeAllowed && capabilities.zapScans; // OWASP ZAP active scan gated by verification
+    const runAi = capabilities.aiFindings && hasConsent && !isPassiveOnly;
+    let activeScanData = { 
+      scanned: false, 
+      status: !isPassiveOnly && !activeAllowed ? 'unverified_domain_skipped' : (capabilities.activeScans ? 'not_applicable' : 'disabled'), 
+      findingsCount: 0 
+    };
 
     // 6-hour Cache Check (Performance Optimization)
     const forceRescan = req.query.force === 'true' || req.body.force === 'true';
@@ -614,13 +645,14 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
     
     const securityResult = await securityAnalyzer.analyzeSecurity(crawlerResult, runAi, onStep);
 
+    let siteCrawl = null;
     // If full scan mode is enabled, run multi-page crawling and active form probing
     if (scanMode === 'full') {
       // 1. Multi-page passive audit (mixed-content and cookies flags)
       emitStep('crawling', 'in_progress', { message: 'Mapping site pages...' });
       try {
         console.log(`[scan] [${scanId}] Initiating multi-page audit via siteCrawler`);
-        const siteCrawl = await crawlSite(normalizedUrl, authOptions);
+        siteCrawl = await crawlSite(normalizedUrl, authOptions);
         if (siteCrawl && siteCrawl.pages && siteCrawl.pages.length > 1) {
           const cheerio = require('cheerio');
           for (const page of siteCrawl.pages) {
@@ -732,7 +764,12 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
       }
     }
 
-    let loadTestResult = { scanned: false, verdict: scanMode === 'full' && !capabilities.loadTesting ? 'Skipped: Load resilience testing is disabled.' : 'Skipped: Load resilience test is only executed in Full scan mode.' };
+    let loadTestResult = { 
+      scanned: false, 
+      verdict: !activeAllowed && !isPassiveOnly 
+        ? 'Skipped: Load resilience testing requires verified domain ownership.' 
+        : (capabilities.loadTesting ? 'Skipped: Load resilience test is only executed in Full/Active scan mode on verified domains.' : 'Skipped: Load resilience testing is disabled.') 
+    };
     if (shouldRunLoadTest) {
       // 3. Load Resilience & Rate Limiting Test
       emitStep('load_test', 'in_progress', { message: 'Auditing load resilience & rate limiting...' });

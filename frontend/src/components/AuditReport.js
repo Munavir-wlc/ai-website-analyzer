@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
@@ -9,8 +9,9 @@ import {
   Shield, CheckCircle, AlertTriangle, FileText, Download, Clock, 
   Settings, Globe, Lock, ShieldAlert, Cpu, Database, Eye, Info,
   Loader2, Monitor, Smartphone, TrendingUp, TrendingDown, ArrowUpRight, ExternalLink, Search, Copy, Sparkles, BarChart3,
-  Printer
+  Printer, ChevronDown, ChevronRight, Zap, Layers, Filter, Check
 } from 'lucide-react';
+import { SEVERITY_COLORS, getSeverityStyle, getEffortLevel, EFFORT_CONFIG } from '@/lib/severityColors';
 import FindingChatModal from './FindingChatModal';
 
 function GradeGauge({ grade, score, size = 'md', color }) {
@@ -136,13 +137,38 @@ function RemediationTabs({ title }) {
   );
 }
 
-export default function AuditReport({ result, screenshots }) {
+function getCanonicalCategory(finding) {
+  const cat = (finding.category || '').toLowerCase();
+  const title = (finding.title || '').toLowerCase();
+  const id = (finding.id || '').toLowerCase();
+
+  if (cat.includes('seo') || id.includes('seo') || title.includes('seo') || title.includes('sitemap') || title.includes('meta description')) {
+    return 'Technical SEO';
+  }
+  if (cat.includes('accessib') || id.includes('accessib') || title.includes('wcag') || title.includes('contrast') || title.includes('alt text') || title.includes('aria')) {
+    return 'WCAG Accessibility';
+  }
+  if (cat.includes('perform') || id.includes('perf') || title.includes('speed') || title.includes('lcp') || title.includes('fcp') || title.includes('ttfb') || title.includes('cache')) {
+    return 'Performance & Speed';
+  }
+  if (cat.includes('ai search') || cat.includes('geo') || id.includes('ai-search') || title.includes('llm') || title.includes('geo')) {
+    return 'AI Search & GEO Visibility';
+  }
+  if (cat.includes('cookie') || cat.includes('header') || cat.includes('ssl') || cat.includes('dns') || cat.includes('vapt') || cat.includes('security') || cat.includes('injection') || cat.includes('cors') || cat.includes('script') || cat.includes('cve') || cat.includes('form') || cat.includes('vuln')) {
+    return 'Security & VAPT';
+  }
+  return finding.category || 'General Audits';
+}
+
+export default function AuditReport({ result, screenshots, executiveSummary }) {
   const [activeSeverityFilter, setActiveSeverityFilter] = useState('all');
   const [activeReportTab, setActiveReportTab] = useState('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [isShared, setIsShared] = useState(result.isPublic || false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [activeChatFinding, setActiveChatFinding] = useState(null);
+  const [sortBy, setSortBy] = useState('severity'); // 'severity' or 'quick_wins'
+  const [openSections, setOpenSections] = useState({});
   const searchInputRef = useRef(null);
 
   // Keyboard shortcut: press '/' to focus vulnerability search
@@ -391,6 +417,87 @@ export default function AuditReport({ result, screenshots }) {
     );
   });
 
+  // Group and sort findings by category with effort ranking and critical/high tracking
+  const categorizedFindings = useMemo(() => {
+    const sorted = [...filteredIssues].sort((a, b) => {
+      const sevRank = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+      const aSev = sevRank[a.severity?.toLowerCase()] ?? 5;
+      const bSev = sevRank[b.severity?.toLowerCase()] ?? 5;
+
+      if (sortBy === 'quick_wins') {
+        const effortRank = { low: 0, medium: 1, high: 2 };
+        const aEff = effortRank[getEffortLevel(a)] ?? 1;
+        const bEff = effortRank[getEffortLevel(b)] ?? 1;
+        if (aEff !== bEff) return aEff - bEff;
+        return aSev - bSev;
+      }
+
+      if (aSev !== bSev) return aSev - bSev;
+      return (a.title || '').localeCompare(b.title || '');
+    });
+
+    const groups = {};
+    sorted.forEach((finding) => {
+      const category = getCanonicalCategory(finding);
+      if (!groups[category]) {
+        groups[category] = [];
+      }
+      groups[category].push(finding);
+    });
+
+    return Object.entries(groups).map(([category, items]) => {
+      const criticalCount = items.filter(i => i.severity?.toLowerCase() === 'critical').length;
+      const highCount = items.filter(i => i.severity?.toLowerCase() === 'high').length;
+      const mediumCount = items.filter(i => i.severity?.toLowerCase() === 'medium').length;
+      const lowCount = items.filter(i => i.severity?.toLowerCase() === 'low').length;
+      const criticalHighCount = criticalCount + highCount;
+      return {
+        category,
+        items,
+        criticalCount,
+        highCount,
+        mediumCount,
+        lowCount,
+        criticalHighCount,
+        hasCriticalOrHigh: criticalHighCount > 0
+      };
+    });
+  }, [filteredIssues, sortBy]);
+
+  // Default sections with any critical/high finding OPEN; others COLLAPSED
+  useEffect(() => {
+    setOpenSections(prev => {
+      const updated = {};
+      categorizedFindings.forEach((group) => {
+        if (typeof prev[group.category] === 'boolean') {
+          updated[group.category] = prev[group.category];
+        } else {
+          updated[group.category] = group.hasCriticalOrHigh;
+        }
+      });
+      return updated;
+    });
+  }, [categorizedFindings]);
+
+  const toggleSection = (category) => {
+    setOpenSections(prev => ({
+      ...prev,
+      [category]: !prev[category]
+    }));
+  };
+
+  const expandAllSections = () => {
+    const allOpen = {};
+    categorizedFindings.forEach(g => { allOpen[g.category] = true; });
+    setOpenSections(allOpen);
+  };
+
+  const collapseAllSections = () => {
+    const allClosed = {};
+    categorizedFindings.forEach(g => { allClosed[g.category] = false; });
+    setOpenSections(allClosed);
+  };
+
   const filterTabs = [
     { id: 'all', label: 'All Findings', count: totalIssues },
     { id: 'critical', label: 'Critical', count: breakdown.critical || issues.filter(i => i.severity === 'critical').length },
@@ -582,6 +689,40 @@ export default function AuditReport({ result, screenshots }) {
             <Download className="h-4 w-4" /> Export CSV
           </Button>
         </div>
+      </div>
+
+      {/* Executive Summary Card (Top of Report) */}
+      <div className="border border-indigo-500/30 rounded-3xl bg-gradient-to-r from-indigo-950/70 via-slate-900/90 to-purple-950/70 p-6 sm:p-7 shadow-2xl relative overflow-hidden backdrop-blur-md mb-8">
+        <div className="absolute top-0 right-0 -mr-12 -mt-12 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+              <Sparkles className="w-4 h-4 text-indigo-400" />
+            </div>
+            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-indigo-300">
+              Executive Summary
+            </h3>
+          </div>
+          <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+            AI Threat & Performance Intelligence
+          </span>
+        </div>
+
+        {executiveSummary || result.executiveSummary ? (
+          <p className="text-sm sm:text-base md:text-lg font-medium text-slate-100 leading-relaxed">
+            {executiveSummary || result.executiveSummary}
+          </p>
+        ) : result.summary ? (
+          <p className="text-sm sm:text-base md:text-lg font-medium text-slate-100 leading-relaxed">
+            {result.summary}
+          </p>
+        ) : (
+          <div className="space-y-2 py-1 animate-pulse">
+            <div className="h-4 bg-indigo-500/10 rounded-lg w-full" />
+            <div className="h-4 bg-indigo-500/10 rounded-lg w-5/6" />
+            <div className="h-4 bg-indigo-500/10 rounded-lg w-3/4" />
+          </div>
+        )}
       </div>
 
       {/* Audit Overview & Summary */}
@@ -1344,25 +1485,26 @@ export default function AuditReport({ result, screenshots }) {
         </div>
       )}
 
-      {/* Vulnerabilities Details with Filter Tabs */}
+      {/* Vulnerabilities Details with Filter Tabs, Sorting & Categorized Collapsible Sections */}
       <div className={activeReportTab === 'vulnerabilities' ? 'block' : 'hidden print:block'}>
-        <div className="border border-slate-800 rounded-3xl bg-slate-900/60 p-6 sm:p-8 shadow-2xl">
+        <div className="border border-slate-800 rounded-3xl bg-slate-900/60 p-4 sm:p-6 lg:p-8 shadow-2xl">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4 mb-6">
-            <h3 className="text-xl font-bold text-white">
-              Vulnerability Audits ({filteredIssues.length})
+            <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-indigo-400" />
+              Audit Findings & Vulnerabilities ({filteredIssues.length})
             </h3>
             
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 print:hidden">
               {/* Search Bar */}
               <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-550" />
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
                 <input
                   ref={searchInputRef}
                   type="text"
                   placeholder="Search findings... ( / )"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 w-full sm:w-56 transition-all"
+                  className="bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 w-full sm:w-56 transition-all font-mono"
                 />
               </div>
 
@@ -1372,7 +1514,7 @@ export default function AuditReport({ result, screenshots }) {
                   <button
                     key={tab.id}
                     onClick={() => setActiveSeverityFilter(tab.id)}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                    className={`px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
                       activeSeverityFilter === tab.id
                         ? 'bg-slate-800 text-white shadow-md'
                         : 'text-slate-400 hover:text-white'
@@ -1388,6 +1530,57 @@ export default function AuditReport({ result, screenshots }) {
             </div>
           </div>
 
+          {/* Sort & Collapsible View Controls */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80 mb-6 print:hidden">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-indigo-400" /> Sort Findings:
+              </span>
+              <div className="flex rounded-xl bg-slate-900 p-0.5 border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setSortBy('severity')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+                    sortBy === 'severity'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Severity (Default)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSortBy('quick_wins')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                    sortBy === 'quick_wins'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-300" /> Quick Wins First
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={expandAllSections}
+                className="text-xs font-medium text-slate-400 hover:text-white px-2.5 py-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                Expand All
+              </button>
+              <span className="text-slate-700">|</span>
+              <button
+                type="button"
+                onClick={collapseAllSections}
+                className="text-xs font-medium text-slate-400 hover:text-white px-2.5 py-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                Collapse All
+              </button>
+            </div>
+          </div>
+
           {filteredIssues.length === 0 ? (
             <div className="py-12 text-center text-slate-500">
               <CheckCircle className="h-10 w-10 text-emerald-400 mx-auto mb-3" />
@@ -1395,125 +1588,182 @@ export default function AuditReport({ result, screenshots }) {
               <p className="text-sm text-slate-400 mt-1">No matches found for the active filter. Your configuration passes audit checks.</p>
             </div>
           ) : (
-            <div className="space-y-6">
-              {filteredIssues.map((issue, i) => {
-                const isFixed = activeSeverityFilter === 'fixed';
-                const findingStatuses = result.findingStatuses || {};
-                const currentStatus = findingStatuses[issue.id]?.status || 'open';
-
-                const handleStatusChange = async (newStatus) => {
-                  if (!result.belongsToCurrentUser) return;
-                  try {
-                    const token = localStorage.getItem('vapt_auth_token');
-                    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-                    await fetch(`${API_URL}/api/scan/results/${result.scanId}/findings/${issue.id}/status`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                      body: JSON.stringify({ status: newStatus })
-                    });
-                    // Optimistic update via a local reload isn't needed - page state is controlled by parent
-                  } catch (err) {
-                    console.error('Failed to update finding status:', err);
-                  }
-                };
-
-                const STATUS_CONFIG = {
-                  open: { label: 'Open', color: 'text-slate-400 bg-slate-900 border-slate-800' },
-                  in_progress: { label: 'In Progress', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' },
-                  accepted: { label: 'Accepted Risk', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30' }
-                };
+            <div className="space-y-5">
+              {categorizedFindings.map((group) => {
+                const isOpen = openSections[group.category] ?? group.hasCriticalOrHigh;
 
                 return (
-                  <div
-                    key={i}
-                    className={`border rounded-2xl p-5 hover:bg-slate-950/20 transition flex flex-col md:flex-row gap-4 justify-between ${
-                      isFixed 
-                        ? 'border-emerald-500/30 bg-emerald-950/5 hover:bg-emerald-950/10' 
-                        : 'border-slate-800'
-                    }`}
+                  <div 
+                    key={group.category} 
+                    className="border border-slate-800 rounded-2xl bg-slate-950/40 overflow-hidden shadow-md transition-all"
                   >
-                    <div className="space-y-2 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {isFixed && <CheckCircle className="h-5 w-5 text-emerald-400 shrink-0" />}
-                        <span className="font-bold text-white text-base sm:text-lg">
-                          {issue.title}
-                        </span>
-                        {issue.category && (
-                          <Badge className="text-[10px] uppercase bg-slate-800 text-slate-400 font-mono tracking-wider border border-slate-800">
-                            {issue.category}
-                          </Badge>
-                        )}
-                        {issue.owasp && (
-                          <Badge className="text-[10px] uppercase text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 font-mono tracking-wider">
-                            {issue.owasp}
-                          </Badge>
-                        )}
-                        {isFixed && (
-                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/35">
-                            Fixed / Resolved
+                    {/* Collapsible Section Header */}
+                    <button
+                      type="button"
+                      onClick={() => toggleSection(group.category)}
+                      className="w-full px-4 sm:px-5 py-3.5 flex items-center justify-between gap-3 text-left hover:bg-slate-900/50 transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`p-1.5 rounded-xl border shrink-0 ${group.hasCriticalOrHigh ? 'bg-rose-500/10 text-rose-400 border-rose-500/25' : 'bg-slate-800 text-slate-300 border-slate-700'}`}>
+                          <Layers className="w-4 h-4" />
+                        </div>
+                        <div className="truncate">
+                          <span className="font-bold text-white text-sm sm:text-base">
+                            {group.category}
+                          </span>
+                          <span className="ml-2 text-xs text-slate-400 font-mono">
+                            ({group.items.length} {group.items.length === 1 ? 'item' : 'items'})
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {group.hasCriticalOrHigh ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-bold px-2 sm:px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                            {group.criticalCount > 0 ? `${group.criticalCount} Critical` : ''}
+                            {group.criticalCount > 0 && group.highCount > 0 ? ', ' : ''}
+                            {group.highCount > 0 ? `${group.highCount} High` : ''}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-400 border border-slate-700/80">
+                            Pass / Low Risk
                           </span>
                         )}
-                      </div>
-                      <p className="text-sm text-slate-300 leading-relaxed mt-1">
-                        {issue.description}
-                      </p>
-                      {issue.remediation && (
-                        <div className={`rounded-xl p-4 border-l-4 text-sm mt-2 font-medium ${
-                          isFixed 
-                            ? 'bg-emerald-950/20 border-emerald-500 text-slate-300' 
-                            : 'bg-slate-950/80 border-indigo-500 text-slate-300'
-                        }`}>
-                          <strong className={`font-semibold block mb-1 text-xs uppercase tracking-wider ${
-                            isFixed ? 'text-emerald-400' : 'text-indigo-400'
-                          }`}>
-                            {isFixed ? 'Verification Detail:' : 'Remediation Guide:'}
-                          </strong>
-                          <div>
-                            {isFixed ? 'Security audit verified that this issue is no longer present on your server.' : issue.remediation}
-                          </div>
-                          {!isFixed && <RemediationTabs title={issue.title} />}
-                        </div>
-                      )}
-                    </div>
 
-                    <div className="shrink-0 flex flex-col items-end gap-2">
-                      <span
-                        className={`inline-flex px-3 py-1.5 text-[10px] sm:text-xs rounded-lg font-extrabold uppercase tracking-wider border ${
-                          isFixed
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                            : issue.severity === 'critical' || issue.severity === 'high'
-                              ? 'bg-red-500/10 text-red-400 border-red-500/20'
-                              : issue.severity === 'medium'
-                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                        }`}
-                      >
-                        {isFixed ? 'RESOLVED' : issue.severity}
-                      </span>
-                      {!isFixed && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveChatFinding(issue);
-                          }}
-                          className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 hover:text-white bg-indigo-500/10 hover:bg-indigo-600 border border-indigo-500/20 px-2.5 py-1 rounded-lg transition-all shadow-sm cursor-pointer"
-                        >
-                          <Sparkles className="h-3 w-3 text-indigo-400 animate-pulse" /> Ask AI Assistant
-                        </button>
-                      )}
-                      {!isFixed && result.belongsToCurrentUser && (
-                        <select
-                          value={currentStatus}
-                          onChange={(e) => handleStatusChange(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          className={`text-[10px] font-bold border rounded-lg px-2 py-1 focus:outline-none cursor-pointer transition-colors ${STATUS_CONFIG[currentStatus]?.color || STATUS_CONFIG.open.color}`}
-                        >
-                          <option value="open">Open</option>
-                          <option value="in_progress">In Progress</option>
-                          <option value="accepted">Accepted Risk</option>
-                        </select>
-                      )}
-                    </div>
+                        <div className={`p-1 rounded-lg text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-white' : ''}`}>
+                          <ChevronDown className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Collapsible Content */}
+                    {isOpen && (
+                      <div className="p-3 sm:p-5 border-t border-slate-800/80 space-y-4 bg-slate-900/20">
+                        {group.items.map((issue, idx) => {
+                          const isFixed = activeSeverityFilter === 'fixed';
+                          const findingStatuses = result.findingStatuses || {};
+                          const currentStatus = findingStatuses[issue.id]?.status || 'open';
+                          const sev = getSeverityStyle(isFixed ? 'fixed' : issue.severity);
+                          const effort = getEffortLevel(issue);
+                          const effortMeta = EFFORT_CONFIG[effort] || EFFORT_CONFIG.medium;
+
+                          const handleStatusChange = async (newStatus) => {
+                            if (!result.belongsToCurrentUser) return;
+                            try {
+                              const token = localStorage.getItem('vapt_auth_token');
+                              const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+                              await fetch(`${API_URL}/api/scan/results/${result.scanId}/findings/${issue.id}/status`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                body: JSON.stringify({ status: newStatus })
+                              });
+                            } catch (err) {
+                              console.error('Failed to update finding status:', err);
+                            }
+                          };
+
+                          const STATUS_CONFIG = {
+                            open: { label: 'Open', color: 'text-slate-400 bg-slate-900 border-slate-800' },
+                            in_progress: { label: 'In Progress', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' },
+                            accepted: { label: 'Accepted Risk', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30' }
+                          };
+
+                          return (
+                            <div
+                              key={issue.id || idx}
+                              className={`border rounded-2xl p-4 sm:p-5 transition flex flex-col md:flex-row gap-4 justify-between ${
+                                isFixed 
+                                  ? 'border-emerald-500/30 bg-emerald-950/10' 
+                                  : 'border-slate-800/90 bg-slate-950/50 hover:bg-slate-950/80'
+                              }`}
+                            >
+                              <div className="space-y-2 flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {isFixed && <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />}
+                                  <span className="font-bold text-white text-sm sm:text-base break-words">
+                                    {issue.title}
+                                  </span>
+                                  {issue.category && (
+                                    <Badge className="text-[10px] uppercase bg-slate-800 text-slate-400 font-mono tracking-wider border border-slate-700">
+                                      {issue.category}
+                                    </Badge>
+                                  )}
+                                  {issue.owasp && (
+                                    <Badge className="text-[10px] uppercase text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 font-mono tracking-wider">
+                                      {issue.owasp}
+                                    </Badge>
+                                  )}
+                                  {/* Effort badge */}
+                                  <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${effortMeta.badge}`}>
+                                    <Zap className="w-2.5 h-2.5" /> {effortMeta.label}
+                                  </span>
+                                  {isFixed && (
+                                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/35">
+                                      Fixed / Resolved
+                                    </span>
+                                  )}
+                                </div>
+
+                                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mt-1 break-words">
+                                  {issue.description}
+                                </p>
+
+                                {issue.remediation && (
+                                  <div className={`rounded-xl p-3.5 sm:p-4 border-l-4 text-xs sm:text-sm mt-2 font-medium ${
+                                    isFixed 
+                                      ? 'bg-emerald-950/20 border-emerald-500 text-slate-300' 
+                                      : 'bg-slate-950/90 border-indigo-500 text-slate-300'
+                                  }`}>
+                                    <strong className={`font-semibold block mb-1 text-xs uppercase tracking-wider ${
+                                      isFixed ? 'text-emerald-400' : 'text-indigo-400'
+                                    }`}>
+                                      {isFixed ? 'Verification Detail:' : 'Remediation Guide:'}
+                                    </strong>
+                                    <div className="break-words">
+                                      {isFixed ? 'Security audit verified that this issue is no longer present on your server.' : issue.remediation}
+                                    </div>
+                                    {!isFixed && <RemediationTabs title={issue.title} />}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="shrink-0 flex md:flex-col items-center md:items-end justify-between md:justify-start gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800/60">
+                                <span
+                                  className={`inline-flex px-2.5 sm:px-3 py-1 text-[10px] sm:text-xs rounded-lg font-extrabold uppercase tracking-wider border ${sev.badge}`}
+                                >
+                                  {isFixed ? 'RESOLVED' : issue.severity || 'LOW'}
+                                </span>
+                                {!isFixed && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveChatFinding(issue);
+                                    }}
+                                    className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 hover:text-white bg-indigo-500/10 hover:bg-indigo-600 border border-indigo-500/20 px-2.5 py-1 rounded-lg transition-all shadow-sm cursor-pointer"
+                                  >
+                                    <Sparkles className="h-3 w-3 text-indigo-400 animate-pulse" /> Ask AI
+                                  </button>
+                                )}
+                                {!isFixed && result.belongsToCurrentUser && (
+                                  <select
+                                    value={currentStatus}
+                                    onChange={(e) => handleStatusChange(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className={`text-[10px] font-bold border rounded-lg px-2 py-1 focus:outline-none cursor-pointer transition-colors ${STATUS_CONFIG[currentStatus]?.color || STATUS_CONFIG.open.color}`}
+                                  >
+                                    <option value="open">Open</option>
+                                    <option value="in_progress">In Progress</option>
+                                    <option value="accepted">Accepted Risk</option>
+                                  </select>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}

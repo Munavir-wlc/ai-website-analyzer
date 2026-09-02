@@ -1,14 +1,30 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
+import { io } from 'socket.io-client';
 import Navbar from '../../components/Navbar';
 import AuditReport from '../../components/AuditReport';
 import Footer from '../../components/Footer';
 import { Button } from '../../components/ui/Button';
-import { ArrowLeft, RefreshCw, FolderOutput, Globe, User } from 'lucide-react';
+import { 
+  ArrowLeft, RefreshCw, FolderOutput, Globe, User, 
+  CheckCircle2, Loader2, Circle, AlertCircle, ShieldCheck, Sparkles 
+} from 'lucide-react';
 import { useAuth } from '../../lib/AuthContext';
 import { useWorkspace } from '../../lib/WorkspaceContext';
+
+const SCAN_STEPS = [
+  { id: 'crawling', label: 'Crawling Website & Page Structure' },
+  { id: 'ssl_check', label: 'SSL/TLS Certificate & Cipher Inspection' },
+  { id: 'dns_check', label: 'DNS & Mail Records (SPF / DMARC / MX)' },
+  { id: 'file_check', label: 'Sensitive Files & Path Exposure Audit' },
+  { id: 'cve_scan', label: 'Passive CVE & Software Vulnerability Matching' },
+  { id: 'performance', label: 'Performance Metrics & Speed Index' },
+  { id: 'accessibility', label: 'WCAG Accessibility Standards Audit' },
+  { id: 'seo', label: 'Technical SEO & Search Visibility' },
+  { id: 'ai_analysis', label: 'AI Threat Intelligence & Executive Summary' }
+];
 
 export default function ResultsPage() {
   const { user, token, loading: authLoading } = useAuth();
@@ -16,10 +32,65 @@ export default function ResultsPage() {
   const [openMoveMenu, setOpenMoveMenu] = useState(false);
   const [moving, setMoving] = useState(false);
   const [result, setResult] = useState(null);
-  const [hasChecked, setHasChecked] = useState(false);
-  const [screenshots, setScreenshots] = useState({ loading: false, desktop: null, mobile: null, error: null });
-  const [errorMsg, setErrorMsg] = useState(null);
-  const [showClaimedSuccess, setShowClaimedSuccess] = useState(false);
+  const [stepStates, setStepStates] = useState({
+    crawling: 'in_progress',
+    ssl_check: 'pending',
+    dns_check: 'pending',
+    file_check: 'pending',
+    cve_scan: 'pending',
+    performance: 'pending',
+    accessibility: 'pending',
+    seo: 'pending',
+    ai_analysis: 'pending'
+  });
+  const [activeStepMessage, setActiveStepMessage] = useState('');
+
+  // Socket.io connection to stream live scan execution progress
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const scanId = urlParams.get('scanId');
+    if (!scanId || (hasChecked && result && result.score !== undefined)) return;
+
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+    let socket;
+    try {
+      socket = io(API_URL);
+
+      socket.on('scan_progress', (data) => {
+        if (data && (data.scanId === scanId || !data.scanId)) {
+          if (data.step) {
+            setStepStates((prev) => ({
+              ...prev,
+              [data.step]: data.status || 'in_progress'
+            }));
+          }
+          if (data.message) {
+            setActiveStepMessage(data.message);
+          }
+          if (data.status === 'completed' && (data.step === 'complete' || data.step === 'ai_analysis')) {
+            // Refetch final result
+            const token = localStorage.getItem('vapt_auth_token');
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            fetch(`${API_URL}/api/scan/results/${scanId}`, { headers })
+              .then((res) => res.ok ? res.json() : null)
+              .then((fresh) => {
+                if (fresh) {
+                  setResult(fresh);
+                  setHasChecked(true);
+                }
+              })
+              .catch(() => {});
+          }
+        }
+      });
+    } catch (_) {}
+
+    return () => {
+      if (socket) socket.disconnect();
+    };
+  }, [hasChecked, result]);
 
   const handleMoveReport = async (targetWorkspaceId) => {
     if (!result || !result.scanId) return;
@@ -93,8 +164,13 @@ export default function ResultsPage() {
           return res.json();
         })
         .then((data) => {
-          setResult(data);
-          setHasChecked(true);
+          if (data && data.status === 'processing') {
+            // Still in progress
+            setHasChecked(false);
+          } else {
+            setResult(data);
+            setHasChecked(true);
+          }
         })
         .catch((err) => {
           console.error('[Results Fetch Error]:', err);
@@ -172,14 +248,89 @@ export default function ResultsPage() {
     }
   }, [result]);
 
-  if (authLoading || (!hasChecked && !result)) {
+  const renderProgressIcon = (status) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />;
+      case 'in_progress':
+        return <Loader2 className="h-4 w-4 text-indigo-400 animate-spin shrink-0" />;
+      case 'failed':
+        return <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />;
+      default:
+        return <Circle className="h-4 w-4 text-slate-600 shrink-0" />;
+    }
+  };
+
+  const getStepTextStyle = (status) => {
+    switch (status) {
+      case 'completed':
+        return 'text-emerald-400 font-medium';
+      case 'in_progress':
+        return 'text-white font-bold';
+      case 'failed':
+        return 'text-rose-400';
+      default:
+        return 'text-slate-500';
+    }
+  };
+
+  const completedCount = Object.values(stepStates).filter(s => s === 'completed').length;
+  const inProgressCount = Object.values(stepStates).filter(s => s === 'in_progress').length;
+  const progressPercent = Math.min(99, Math.round(((completedCount + inProgressCount * 0.5) / SCAN_STEPS.length) * 100));
+
+  if (authLoading || (!hasChecked && !result) || (result && result.status === 'processing')) {
     return (
-      <div className="min-h-screen flex flex-col bg-background text-foreground transition-colors duration-300">
+      <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
         <Navbar />
-        <main className="flex-1 flex items-center justify-center p-8">
-          <div className="flex items-center gap-3 text-indigo-500 dark:text-indigo-400 font-semibold animate-pulse">
-            <RefreshCw className="h-5 w-5 animate-spin" />
-            Loading report results...
+        <main className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+          <div className="w-full max-w-lg bg-slate-900/80 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 -mr-16 -mt-16 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+            
+            {/* Header with animated icon */}
+            <div className="flex flex-col items-center text-center space-y-3 mb-6">
+              <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl bg-indigo-600/15 border border-indigo-500/30 text-indigo-400 shadow-lg shadow-indigo-600/20">
+                <Loader2 className="h-7 w-7 text-indigo-400 animate-spin" />
+                <ShieldCheck className="h-4 w-4 text-indigo-300 absolute" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white tracking-tight">
+                  Running Deep Security & Audit Scan
+                </h2>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                  {activeStepMessage || 'Performing live passive checks, certificate validation, and threat modeling...'}
+                </p>
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="space-y-2 mb-6">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400 font-medium">Real-Time Progress</span>
+                <span className="font-bold text-indigo-400 font-mono">{progressPercent}%</span>
+              </div>
+              <div className="w-full bg-slate-950 rounded-full h-2.5 overflow-hidden border border-slate-800">
+                <div
+                  className="h-2.5 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500 transition-all duration-500"
+                  style={{ width: `${Math.max(8, progressPercent)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Live Steps Checklist */}
+            <div className="space-y-2.5 bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80">
+              {SCAN_STEPS.map((step) => {
+                const status = stepStates[step.id] || 'pending';
+                return (
+                  <div
+                    key={step.id}
+                    className="flex items-center justify-between text-xs py-1.5 border-b border-slate-900/80 last:border-0"
+                  >
+                    <span className={getStepTextStyle(status)}>{step.label}</span>
+                    {renderProgressIcon(status)}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </main>
         <Footer />
@@ -302,7 +453,11 @@ export default function ResultsPage() {
             </div>
           )}
 
-          <AuditReport result={result} screenshots={screenshots} />
+          <AuditReport 
+            result={result} 
+            screenshots={screenshots} 
+            executiveSummary={result.executiveSummary} 
+          />
         </div>
       </main>
       <Footer />
