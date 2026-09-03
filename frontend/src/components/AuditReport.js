@@ -842,6 +842,7 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
           </div>
         </div>
       </div>
+    </div>
 
       {/* Comparison Banner */}
       {result.previousScanDetails && (
@@ -1666,7 +1667,9 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
                           const STATUS_CONFIG = {
                             open: { label: 'Open', color: 'text-slate-400 bg-slate-900 border-slate-800' },
                             in_progress: { label: 'In Progress', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' },
-                            accepted: { label: 'Accepted Risk', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30' }
+                            accepted: { label: 'Accepted Risk', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30' },
+                            ignored: { label: 'Ignored', color: 'text-slate-500 bg-slate-900/80 border-slate-800' },
+                            resolved: { label: 'Marked Resolved', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' }
                           };
 
                           return (
@@ -1756,6 +1759,8 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
                                     <option value="open">Open</option>
                                     <option value="in_progress">In Progress</option>
                                     <option value="accepted">Accepted Risk</option>
+                                    <option value="ignored">Ignored</option>
+                                    <option value="resolved">Marked Resolved</option>
                                   </select>
                                 )}
                               </div>

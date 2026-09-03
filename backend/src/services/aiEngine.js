@@ -521,5 +521,140 @@ STRICT GUARDRAIL RULES:
   }
 }
 
-module.exports = { generateRecommendations, analyzeSecurityWithAI, detectTechnologies, auditOutdatedLibraries, chatWithFindingAssistant };
+/**
+ * Generate Structured, Tech-Aware AI Remediation Guide
+ * Tailored to detected server and application frameworks (Nginx, Apache, Express, Next.js, WordPress, Cloudflare, etc.)
+ */
+async function generateStructuredRemediation(finding, techStack = {}) {
+  if (!finding) return null;
+
+  const detectedTech = Array.isArray(techStack)
+    ? techStack
+    : Object.values(techStack || {}).flat().filter(Boolean);
+
+  const techSummary = detectedTech.length > 0 ? detectedTech.join(', ') : 'Standard Web Stack';
+
+  // Deterministic high-quality fallback snippets
+  const getStaticGuidance = () => {
+    const title = (finding.title || '').toLowerCase();
+    const id = (finding.id || '').toLowerCase();
+
+    let codeSnippets = {
+      nginx: '# add_header X-Content-Type-Options "nosniff" always;\n# add_header X-Frame-Options "SAMEORIGIN" always;',
+      apache: '# Header always set X-Content-Type-Options "nosniff"\n# Header always set X-Frame-Options "SAMEORIGIN"',
+      express: '// const helmet = require("helmet");\n// app.use(helmet());',
+      nextjs: '// next.config.js\n// module.exports = { async headers() { return [{ source: "/:path*", headers: [...] }]; } };'
+    };
+
+    if (title.includes('hsts') || id.includes('hsts')) {
+      codeSnippets = {
+        nginx: 'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;',
+        apache: 'Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"',
+        express: 'app.use(helmet.hsts({ maxAge: 31536000, includeSubDomains: true, preload: true }));',
+        cloudflare: 'Navigate to SSL/TLS -> Edge Certificates -> Enable "HTTP Strict Transport Security (HSTS)"'
+      };
+    } else if (title.includes('csp') || id.includes('csp') || title.includes('content security')) {
+      codeSnippets = {
+        nginx: 'add_header Content-Security-Policy "default-src \'self\'; script-src \'self\' https://trusted.cdn.com; object-src \'none\';" always;',
+        apache: 'Header always set Content-Security-Policy "default-src \'self\'; script-src \'self\' https://trusted.cdn.com; object-src \'none\';"',
+        express: 'app.use(helmet.contentSecurityPolicy({ directives: { defaultSrc: ["\'self\'"], scriptSrc: ["\'self\'"] } }));',
+        nextjs: '// In next.config.js or middleware.ts\nconst cspHeader = `default-src \'self\'; script-src \'self\';`;'
+      };
+    } else if (title.includes('cookie') || id.includes('cookie')) {
+      codeSnippets = {
+        express: 'res.cookie("session", token, { secure: true, httpOnly: true, sameSite: "strict" });',
+        nginx: 'proxy_cookie_flags ~ secure httponly samesite=strict;',
+        apache: 'Header edit Set-Cookie ^(.*)$ "$1; HttpOnly; Secure; SameSite=Strict"'
+      };
+    }
+
+    return {
+      title: finding.title,
+      severity: finding.severity || 'Medium',
+      category: finding.category || 'Security',
+      whatIsWrong: finding.description || `The security scanner detected ${finding.title}.`,
+      whyItMatters: `Leaving this unaddressed exposes the application to security risks matching ${finding.owasp || 'OWASP guidelines'} and lowers overall compliance posture.`,
+      recommendedFix: finding.remediation || 'Apply standard hardening configuration to your web server and application middleware.',
+      codeSnippets,
+      verificationSteps: [
+        `Run: curl -I https://yourdomain.com`,
+        `Inspect the HTTP response headers to verify the required security parameters are returned.`,
+        `Re-run a continuous monitor scan to confirm automated resolution.`
+      ],
+      detectedTechnologies: detectedTech
+    };
+  };
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return getStaticGuidance();
+  }
+
+  try {
+    const { default: axios } = await import('axios');
+
+    const prompt = `You are a Principal Security Engineer. Generate a structured JSON remediation plan for this finding.
+Finding: ${finding.title}
+Category: ${finding.category || 'Security'}
+Severity: ${finding.severity || 'Medium'}
+Description: ${finding.description || ''}
+Remediation Note: ${finding.remediation || ''}
+Detected Technologies: ${techSummary}
+
+Respond ONLY with a valid JSON object matching this exact shape:
+{
+  "whatIsWrong": "concise explanation of what is misconfigured or vulnerable",
+  "whyItMatters": "why this is a serious threat and what an attacker can do",
+  "recommendedFix": "concrete, step-by-step fix strategy",
+  "codeSnippets": {
+    "nginx": "nginx configuration snippet",
+    "apache": "apache configuration snippet",
+    "express": "express.js middleware code",
+    "nextjs": "next.js configuration code"
+  },
+  "verificationSteps": [
+    "step 1 with exact curl or cli command",
+    "step 2 to test resolution"
+  ]
+}`;
+
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.2,
+        max_tokens: 600,
+        response_format: { type: 'json_object' }
+      },
+      {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        timeout: 12000
+      }
+    );
+
+    const content = response.data?.choices?.[0]?.message?.content;
+    const parsed = JSON.parse(content);
+    return {
+      title: finding.title,
+      severity: finding.severity || 'Medium',
+      category: finding.category || 'Security',
+      detectedTechnologies: detectedTech,
+      ...parsed
+    };
+  } catch (err) {
+    console.warn('[aiEngine] Structured remediation API call failed, falling back to static templates:', err.message);
+    return getStaticGuidance();
+  }
+}
+
+module.exports = { 
+  generateRecommendations, 
+  analyzeSecurityWithAI, 
+  detectTechnologies, 
+  auditOutdatedLibraries, 
+  chatWithFindingAssistant,
+  generateStructuredRemediation
+};
+
 

@@ -41,11 +41,16 @@ const authRoutes = require('./routes/auth');
 const teamRoutes = require('./routes/team');
 const paymentRoutes = require('./routes/payment');
 const domainRoutes = require('./routes/domain');
+const monitoringRoutes = require('./routes/monitoring');
 const { setIo } = require('./utils/socket');
 const { initScanWorker } = require('./services/scanWorker');
+const { startMonitorScheduler } = require('./services/monitorScheduler');
 
 // Connect to MongoDB
 connectDB();
+
+// Initialize scheduled continuous monitoring dispatcher
+startMonitorScheduler();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -166,6 +171,9 @@ app.use('/api/payment', paymentRoutes);
 
 // Domain Ownership Verification API
 app.use('/api/domains', domainRoutes);
+
+// Continuous Scheduled Monitoring API
+app.use('/api/monitoring', monitoringRoutes);
 
 // Screenshot API - 5 per minute (Puppeteer is heavy)
 const screenshotLimiter = rateLimit({

@@ -197,8 +197,8 @@ router.get('/capabilities', (req, res) => {
 // PATCH /api/scan/results/:scanId/findings/:findingId/status
 router.patch('/results/:scanId/findings/:findingId/status', protect, async (req, res) => {
   const { scanId, findingId } = req.params;
-  const { status } = req.body;
-  const validStatuses = ['open', 'accepted', 'in_progress'];
+  const { status, note } = req.body;
+  const validStatuses = ['open', 'accepted', 'in_progress', 'ignored', 'resolved'];
   if (!validStatuses.includes(status)) {
     return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
   }
@@ -884,6 +884,37 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
       requestedZap: shouldRunZap,
       zapRequestStatus: shouldRunZap ? 'completed' : (capabilities.zapScans ? 'not_applicable_for_quick_scan' : 'disabled')
     });
+
+    // Lookup previous scan for change intelligence and lifecycle management
+    let previousScan = null;
+    try {
+      const Scan = require('../models/Scan');
+      const { applyFindingLifecycle, computeScanDiff } = require('../services/findingTracker');
+      
+      if (userId) {
+        previousScan = await Scan.findOne({
+          userId,
+          url: crawlerResult.url,
+          scanId: { $ne: scanId }
+        }).sort({ createdAt: -1 });
+      }
+
+      applyFindingLifecycle({ report: finalReport, findingStatuses: {} }, previousScan);
+
+      if (previousScan) {
+        const diff = computeScanDiff(previousScan, { report: finalReport, score: finalReport.score, scanMode });
+        finalReport.previousScanDetails = {
+          scanId: previousScan.scanId,
+          score: previousScan.score,
+          grade: previousScan.grade,
+          scanDate: previousScan.createdAt
+        };
+        finalReport.scanDiff = diff;
+      }
+    } catch (lifecycleErr) {
+      console.warn('[scanRoutes] Lifecycle & diff tracking warning:', lifecycleErr.message);
+    }
+
     console.log(`[scanRoutes] Persisting sync scan report. ID: ${scanId}`);
     await saveReport(scanId, finalReport, userId, teamId);
 

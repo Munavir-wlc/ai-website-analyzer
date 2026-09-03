@@ -403,8 +403,58 @@ async function processScanJob(data) {
       requestedZap: shouldRunZap,
       zapScanMode: zapScanMode || 'low'
     });
+
+    // Lookup previous scan for change intelligence and lifecycle management
+    let previousScan = null;
+    try {
+      const Scan = require('../models/Scan');
+      const { applyFindingLifecycle, computeScanDiff } = require('./findingTracker');
+      
+      if (userId) {
+        previousScan = await Scan.findOne({
+          userId,
+          url: crawlerResult.url,
+          scanId: { $ne: scanId }
+        }).sort({ createdAt: -1 });
+      }
+
+      applyFindingLifecycle({ report: finalReport, findingStatuses: {} }, previousScan);
+
+      if (previousScan) {
+        const diff = computeScanDiff(previousScan, { report: finalReport, score: finalReport.score, scanMode: 'full' });
+        finalReport.previousScanDetails = {
+          scanId: previousScan.scanId,
+          score: previousScan.score,
+          grade: previousScan.grade,
+          scanDate: previousScan.createdAt
+        };
+        finalReport.scanDiff = diff;
+      }
+    } catch (lifecycleErr) {
+      console.warn('[scanWorker] Lifecycle & diff tracking warning:', lifecycleErr.message);
+    }
+
     console.log(`[scanWorker] Persisting async scan report. ID: ${scanId}`);
     await saveReport(scanId, finalReport, userId);
+
+    // Trigger smart alerts with deduplication
+    try {
+      const Monitor = require('../models/Monitor');
+      const { processScanAlerts } = require('./alertService');
+
+      let monitor = null;
+      if (jobData?.monitorId) {
+        monitor = await Monitor.findById(jobData.monitorId);
+      } else if (userId) {
+        monitor = await Monitor.findOne({ userId, targetUrl: crawlerResult.url });
+      }
+
+      processScanAlerts(
+        { ...finalReport, userId, scanId, url: crawlerResult.url, domain: crawlerResult.url },
+        previousScan,
+        monitor
+      ).catch(aErr => console.warn('[scanWorker] Alert dispatch failed silently:', aErr.message));
+    } catch (_) {}
 
     emitStep('complete', 'completed', { score: report.score, grade: report.grade });
 

@@ -435,7 +435,7 @@ export default function DomainsPage() {
                     {activeTab === 'dns' && (
                       <div className="space-y-4 animate-fadeIn">
                         <p className="text-xs text-slate-400">
-                          Add the following TXT record to your domain's DNS manager (Cloudflare, Route53, Namecheap, etc.):
+                          Add the following TXT record to your domain&apos;s DNS manager (Cloudflare, Route53, Namecheap, etc.):
                         </p>
 
                         <div className="space-y-3">

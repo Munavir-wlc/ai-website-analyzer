@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '../lib/AuthContext';
 import { useTheme } from '../lib/ThemeContext';
 import { useWorkspace } from '../lib/WorkspaceContext';
-import { BarChart3, Shield, ShieldCheck, FileText, LayoutDashboard, LogIn, LogOut, Sun, Moon, Users, Sparkles, ChevronDown, Check, User, Globe } from 'lucide-react';
+import { BarChart3, Shield, ShieldCheck, FileText, LayoutDashboard, LogIn, LogOut, Sun, Moon, Users, Sparkles, ChevronDown, Check, User, Globe, Activity } from 'lucide-react';
 import { Button } from './ui/Button';
 
 const navItems = [
@@ -209,6 +209,14 @@ export default function Navbar() {
                       >
                         <LayoutDashboard className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                         Dashboard
+                      </Link>
+                      <Link
+                        href="/monitoring"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-105 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors"
+                      >
+                        <Activity className="h-4 w-4 text-indigo-400" />
+                        Continuous Monitoring
                       </Link>
                       <Link
                         href="/domains"
