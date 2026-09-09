@@ -20,14 +20,24 @@ const getPriceToPlanMap = () => {
   return map;
 };
 
-// Helper to determine plan tier from Stripe Price ID
+// Helper to determine plan tier from Stripe Price ID.
+// Returns null (and fires a Sentry-level error) if the price ID is unrecognised
+// so that the webhook can reject the event rather than silently guess.
 function resolvePlanFromPriceId(priceId) {
   const priceMap = getPriceToPlanMap();
   if (priceId && priceMap[priceId]) {
     return priceMap[priceId];
   }
-  console.warn(`[Stripe Webhook] Unrecognized or missing price ID (${priceId}). Defaulting to 'pro' plan.`);
-  return 'pro';
+  // Unknown price ID — this is a critical misconfiguration, not a warn-and-guess situation.
+  const errorMsg = `[Stripe Webhook] CRITICAL: Unrecognised price ID "${priceId}". ` +
+    'Webhook rejected. Fix STRIPE_PRICE_PRO / STRIPE_PRICE_TEAM env vars.';
+  console.error(errorMsg);
+  // Report to Sentry if available (fails silently if Sentry isn't initialised)
+  try {
+    const Sentry = require('@sentry/node');
+    Sentry.captureException(new Error(errorMsg));
+  } catch (_) { /* Sentry not initialised — ignore */ }
+  return null;
 }
 
 // @route   GET /api/payment/subscription
@@ -66,12 +76,20 @@ router.post('/create-checkout-session', protect, async (req, res) => {
 
   try {
     const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+    const paymentsConfigured = stripeSecretKey && stripeSecretKey.trim() !== '' && process.env.ENABLE_PAYMENTS === 'true';
 
-    // Fallback mode for testing when Stripe API key is not configured or ENABLE_PAYMENTS is false
-    if (!stripeSecretKey || stripeSecretKey.trim() === '' || process.env.ENABLE_PAYMENTS !== 'true') {
+    // Fallback mode: only allowed outside production
+    if (!paymentsConfigured) {
+      if (process.env.NODE_ENV === 'production') {
+        console.error('[Payment Router] Payment service is not configured but NODE_ENV=production. Returning 503.');
+        return res.status(503).json({
+          error: 'Payment service is not configured. Please contact support.',
+          code: 'PAYMENTS_NOT_CONFIGURED'
+        });
+      }
+
+      // Non-production: simulate upgrade for local/test use
       console.log(`[Payment Router] Simulating subscription upgrade for user ${req.user._id} to plan: ${plan}`);
-      
-      // Auto-upgrade user plan in test environment
       await User.findByIdAndUpdate(req.user._id, {
         plan,
         subscriptionStatus: 'active',
@@ -164,6 +182,15 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
           }
 
           const targetPlan = resolvePlanFromPriceId(priceId);
+
+          // Critical: reject the webhook if we can't map the price ID to a plan.
+          // Returning 400 causes Stripe to mark the delivery as failed (it will
+          // retry), which is far safer than silently assigning the wrong plan.
+          if (targetPlan === null) {
+            return res.status(400).json({
+              error: 'Unrecognised price ID — webhook rejected. Check server logs and Sentry.'
+            });
+          }
 
           await User.findByIdAndUpdate(userId, {
             plan: targetPlan,

@@ -40,7 +40,8 @@ JWT_SECRET=your_jwt_secret_token_here
 OPENAI_API_KEY=your_openai_api_key_here
 ENABLE_ZAP_SCANS=true
 ZAP_API_KEY=vapt_scanner_zap_api_key_2026_xyz
-ALLOW_LOCAL_SCANS=true
+# Set to true ONLY for local development (disables SSRF protection — NEVER true in prod)
+ALLOW_LOCAL_SCANS=false
 ```
 
 ### 3. Run Development Servers

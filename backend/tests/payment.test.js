@@ -168,7 +168,7 @@ describe('Payment & Subscription Integration Tests', () => {
     expect(updatedUser.plan).toBe('team');
   });
 
-  it('should fall back to Pro plan if price ID is unknown in webhook event', async () => {
+  it('should reject webhook with 400 if price ID is unrecognised (no silent plan guess)', async () => {
     const payload = {
       id: 'evt_test_unknown_price_' + Date.now(),
       type: 'checkout.session.completed',
@@ -201,11 +201,12 @@ describe('Payment & Subscription Integration Tests', () => {
       .set('Content-Type', 'application/json')
       .send(payloadString);
 
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ received: true });
+    // Must be rejected — an unknown price ID is a misconfiguration, not a warn-and-guess.
+    expect(res.statusCode).toBe(400);
 
+    // User plan must NOT have changed (still 'free' — not silently downgraded to 'pro').
     const updatedUser = await User.findById(user._id);
-    expect(updatedUser.plan).toBe('pro');
+    expect(updatedUser.plan).toBe('free');
   });
 
   it('should prevent reprocessing on duplicate webhook event.id (idempotency)', async () => {
