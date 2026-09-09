@@ -3,6 +3,18 @@ const axios = require('axios');
 const ZAP_URL = process.env.ZAP_URL || 'http://localhost:8090';
 const ZAP_API_KEY = process.env.ZAP_API_KEY || '';
 
+let zapScanPromise = Promise.resolve();
+
+function acquireZapLock() {
+  let release;
+  const nextPromise = new Promise((resolve) => {
+    release = resolve;
+  });
+  const currentPromise = zapScanPromise;
+  zapScanPromise = currentPromise.then(() => nextPromise);
+  return currentPromise.then(() => release);
+}
+
 /**
  * Check if the OWASP ZAP service is online and accessible.
  * @returns {Promise<boolean>}
@@ -169,6 +181,11 @@ async function executeZapScan(targetUrl, authOptions = {}, onProgress, intensity
   }
 
   const headers = ZAP_API_KEY ? { 'X-ZAP-API-Key': ZAP_API_KEY } : {};
+  
+  // Acquire lock to serialize scans targeting the shared ZAP daemon
+  const release = await acquireZapLock();
+  console.log(`[zapScanner] Acquired ZAP scan lock for target: ${targetUrl}`);
+
   console.log(`[zapScanner] Starting live OWASP ZAP scan (intensity: ${intensity}) for target: ${targetUrl}`);
 
   // Define intensity configuration profiles
@@ -443,7 +460,6 @@ async function executeZapScan(targetUrl, authOptions = {}, onProgress, intensity
     });
 
     onProgress('zap_alerts', 'completed');
-    await cleanupZapAuth(headers);
     return {
       scanned: true,
       available: true,
@@ -455,16 +471,21 @@ async function executeZapScan(targetUrl, authOptions = {}, onProgress, intensity
   } catch (err) {
     console.error('[zapScanner] Live ZAP Scan failed:', err.message);
     onProgress('zap_alerts', 'failed', { error: `OWASP ZAP scan failed: ${err.message}` });
-    try {
-      await cleanupZapAuth(headers);
-    } catch (_) {}
     return {
       scanned: false,
       available: true,
       status: 'failed',
       error: err.message,
       findings: []
+    };
+  } finally {
+    try {
+      await cleanupZapAuth(headers);
+    } catch (e) {
+      console.error('[zapScanner] Error during ZAP auth cleanup:', e.message);
     }
+    console.log(`[zapScanner] Releasing ZAP scan lock for target: ${targetUrl}`);
+    release();
   }
 }
 

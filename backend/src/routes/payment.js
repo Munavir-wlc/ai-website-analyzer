@@ -1,7 +1,44 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
+const ProcessedWebhookEvent = require('../models/ProcessedWebhookEvent');
 const { protect } = require('../middleware/auth');
+
+// Configuration map linking Stripe Price IDs to internal plan tiers
+const getPriceToPlanMap = () => {
+  const map = {};
+  const proPrice = process.env.STRIPE_PRICE_PRO || process.env.STRIPE_PRO_PRICE_ID;
+  const teamPrice = process.env.STRIPE_PRICE_TEAM || process.env.STRIPE_TEAM_PRICE_ID;
+
+  if (proPrice) map[proPrice] = 'pro';
+  if (teamPrice) map[teamPrice] = 'team';
+
+  // Fallback defaults for standard pricing configurations
+  map['price_pro_monthly_29'] = 'pro';
+  map['price_team_monthly_99'] = 'team';
+
+  return map;
+};
+
+// Helper to determine plan tier from Stripe Price ID.
+// Returns null (and fires a Sentry-level error) if the price ID is unrecognised
+// so that the webhook can reject the event rather than silently guess.
+function resolvePlanFromPriceId(priceId) {
+  const priceMap = getPriceToPlanMap();
+  if (priceId && priceMap[priceId]) {
+    return priceMap[priceId];
+  }
+  // Unknown price ID — this is a critical misconfiguration, not a warn-and-guess situation.
+  const errorMsg = `[Stripe Webhook] CRITICAL: Unrecognised price ID "${priceId}". ` +
+    'Webhook rejected. Fix STRIPE_PRICE_PRO / STRIPE_PRICE_TEAM env vars.';
+  console.error(errorMsg);
+  // Report to Sentry if available (fails silently if Sentry isn't initialised)
+  try {
+    const Sentry = require('@sentry/node');
+    Sentry.captureException(new Error(errorMsg));
+  } catch (_) { /* Sentry not initialised — ignore */ }
+  return null;
+}
 
 // @route   GET /api/payment/subscription
 // @desc    Get user's current subscription status and scan quota usage
@@ -39,12 +76,20 @@ router.post('/create-checkout-session', protect, async (req, res) => {
 
   try {
     const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+    const paymentsConfigured = stripeSecretKey && stripeSecretKey.trim() !== '' && process.env.ENABLE_PAYMENTS === 'true';
 
-    // Fallback mode for testing when Stripe API key is not configured or ENABLE_PAYMENTS is false
-    if (!stripeSecretKey || stripeSecretKey.trim() === '' || process.env.ENABLE_PAYMENTS !== 'true') {
+    // Fallback mode: only allowed outside production
+    if (!paymentsConfigured) {
+      if (process.env.NODE_ENV === 'production') {
+        console.error('[Payment Router] Payment service is not configured but NODE_ENV=production. Returning 503.');
+        return res.status(503).json({
+          error: 'Payment service is not configured. Please contact support.',
+          code: 'PAYMENTS_NOT_CONFIGURED'
+        });
+      }
+
+      // Non-production: simulate upgrade for local/test use
       console.log(`[Payment Router] Simulating subscription upgrade for user ${req.user._id} to plan: ${plan}`);
-      
-      // Auto-upgrade user plan in test environment
       await User.findByIdAndUpdate(req.user._id, {
         plan,
         subscriptionStatus: 'active',
@@ -62,8 +107,8 @@ router.post('/create-checkout-session', protect, async (req, res) => {
     // Stripe SDK Integration
     const stripe = require('stripe')(stripeSecretKey);
     const priceId = plan === 'pro'
-      ? (process.env.STRIPE_PRO_PRICE_ID || 'price_pro_monthly_29')
-      : (process.env.STRIPE_TEAM_PRICE_ID || 'price_team_monthly_99');
+      ? (process.env.STRIPE_PRICE_PRO || process.env.STRIPE_PRO_PRICE_ID || 'price_pro_monthly_29')
+      : (process.env.STRIPE_PRICE_TEAM || process.env.STRIPE_TEAM_PRICE_ID || 'price_team_monthly_99');
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -86,7 +131,7 @@ router.post('/create-checkout-session', protect, async (req, res) => {
 });
 
 // @route   POST /api/payment/webhook
-// @desc    Stripe Webhook listener for subscription events
+// @desc    Stripe Webhook listener for subscription events with idempotency & price ID mapping
 // @access  Public (Stripe Signature Verified)
 router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
@@ -99,43 +144,88 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
   let event;
   try {
     const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    const rawPayload = Buffer.isBuffer(req.body) ? req.body : (req.rawBody || (typeof req.body === 'string' ? req.body : JSON.stringify(req.body)));
+    event = stripe.webhooks.constructEvent(rawPayload, sig, webhookSecret);
   } catch (err) {
     console.error('[Stripe Webhook Signature Error]:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // Handle Stripe Event types
-  switch (event.type) {
-    case 'checkout.session.completed': {
-      const session = event.data.object;
-      const userId = session.client_reference_id;
-      if (userId) {
-        await User.findByIdAndUpdate(userId, {
-          plan: session.amount_total > 5000 ? 'team' : 'pro',
-          stripeCustomerId: session.customer,
-          stripeSubscriptionId: session.subscription,
-          subscriptionStatus: 'active',
-          scansCountThisMonth: 0
-        });
-        console.log(`[Stripe Webhook] Upgraded user ${userId} to active subscription.`);
-      }
-      break;
-    }
-    case 'customer.subscription.deleted': {
-      const subscription = event.data.object;
-      await User.findOneAndUpdate({ stripeSubscriptionId: subscription.id }, {
-        plan: 'free',
-        subscriptionStatus: 'canceled'
-      });
-      console.log(`[Stripe Webhook] Subscription ${subscription.id} canceled. Downgraded to free.`);
-      break;
-    }
-    default:
-      console.log(`[Stripe Webhook] Unhandled event type ${event.type}`);
+  // Idempotency Check: Verify if event has already been processed
+  const alreadyProcessed = await ProcessedWebhookEvent.findOne({ eventId: event.id });
+  if (alreadyProcessed) {
+    console.log(`[Stripe Webhook] Duplicate event ${event.id} received. Skipping reprocessing.`);
+    return res.json({ received: true, duplicate: true });
   }
 
-  res.json({ received: true });
+  try {
+    // Handle Stripe Event types
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        const userId = session.client_reference_id;
+
+        if (userId) {
+          // Extract price ID from session or expand line_items if not present
+          let priceId = session.line_items?.data?.[0]?.price?.id || session.priceId;
+
+          if (!priceId && session.id && process.env.STRIPE_SECRET_KEY && !process.env.STRIPE_SECRET_KEY.startsWith('mock')) {
+            try {
+              const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+              const retrievedSession = await stripe.checkout.sessions.retrieve(session.id, {
+                expand: ['line_items']
+              });
+              priceId = retrievedSession?.line_items?.data?.[0]?.price?.id;
+            } catch (retrieveErr) {
+              console.warn('[Stripe Webhook] Could not expand line_items for session:', retrieveErr.message);
+            }
+          }
+
+          const targetPlan = resolvePlanFromPriceId(priceId);
+
+          // Critical: reject the webhook if we can't map the price ID to a plan.
+          // Returning 400 causes Stripe to mark the delivery as failed (it will
+          // retry), which is far safer than silently assigning the wrong plan.
+          if (targetPlan === null) {
+            return res.status(400).json({
+              error: 'Unrecognised price ID — webhook rejected. Check server logs and Sentry.'
+            });
+          }
+
+          await User.findByIdAndUpdate(userId, {
+            plan: targetPlan,
+            stripeCustomerId: session.customer,
+            stripeSubscriptionId: session.subscription,
+            subscriptionStatus: 'active',
+            scansCountThisMonth: 0
+          });
+          console.log(`[Stripe Webhook] Upgraded user ${userId} to active '${targetPlan}' subscription (Price: ${priceId || 'default'}).`);
+        }
+        break;
+      }
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object;
+        await User.findOneAndUpdate({ stripeSubscriptionId: subscription.id }, {
+          plan: 'free',
+          subscriptionStatus: 'canceled'
+        });
+        console.log(`[Stripe Webhook] Subscription ${subscription.id} canceled. Downgraded to free.`);
+        break;
+      }
+      default:
+        console.log(`[Stripe Webhook] Unhandled event type ${event.type}`);
+    }
+
+    // Save ProcessedWebhookEvent record AFTER successful processing for idempotency
+    await ProcessedWebhookEvent.create({ eventId: event.id }).catch(err => {
+      console.warn(`[Stripe Webhook] ProcessedWebhookEvent record creation note: ${err.message}`);
+    });
+
+    res.json({ received: true });
+  } catch (processErr) {
+    console.error(`[Stripe Webhook Processing Error]:`, processErr);
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
 });
 
 module.exports = router;

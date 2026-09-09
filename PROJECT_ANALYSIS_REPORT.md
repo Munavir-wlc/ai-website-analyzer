@@ -6,7 +6,7 @@ Generated on: 2026-06-18
 
 The product promise is: a user enters a website URL, the system uses automated analysis plus AI to find website vulnerabilities and quality issues, then generates a useful report.
 
-The current codebase already supports this direction, but the VAPT/security feature is still a lightweight passive audit. It checks headers, cookies, HTTPS, basic page patterns, and optional AI observations from page metadata. It does not yet perform deeper vulnerability verification such as authenticated scanning, dynamic payload testing, dependency CVE matching, API discovery, or multi-page security scanning.
+The current codebase already supports this direction, with comprehensive security analysis including passive technology fingerprinting, real-time OSV.dev CVE matching, security headers grading, SSL, DNS, exposed files, robots.txt, redirect chain analysis, and optional AI observations.
 
 ## What We Have Now
 

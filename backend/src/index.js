@@ -1,6 +1,18 @@
 // Load .env configuration from backend root (index.js is in src/)
-// Triggering server watch reload to apply ZAP replacer rules check and Puppeteer screenshot auth.
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+
+// Sentry Error Tracking Initialization (at top before other modules)
+const Sentry = require('@sentry/node');
+if (process.env.SENTRY_DSN && process.env.SENTRY_DSN.trim() !== '') {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
+  });
+  console.log('[Sentry] Initialized error and performance monitoring.');
+} else if (process.env.NODE_ENV === 'production') {
+  console.warn('[Sentry] WARNING: SENTRY_DSN is not configured in production environment.');
+}
 
 // Security: ensure critical secrets are present in production
 if (process.env.NODE_ENV === 'production') {
@@ -20,6 +32,9 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
+const { validateEnv } = require('./utils/envValidator');
+validateEnv();
+
 // Node 18 compatibility: undici (from workspace hoisting) expects global File
 if (typeof globalThis.File === 'undefined') {
   globalThis.File = class File {};
@@ -37,11 +52,17 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/auth');
 const teamRoutes = require('./routes/team');
 const paymentRoutes = require('./routes/payment');
+const domainRoutes = require('./routes/domain');
+const monitoringRoutes = require('./routes/monitoring');
 const { setIo } = require('./utils/socket');
 const { initScanWorker } = require('./services/scanWorker');
+const { startMonitorScheduler } = require('./services/monitorScheduler');
 
 // Connect to MongoDB
 connectDB();
+
+// Initialize scheduled continuous monitoring dispatcher
+startMonitorScheduler();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -109,7 +130,7 @@ app.use(helmet({
       frameAncestors: ["'self'"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
-      upgradeInsecureRequests: []
+      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
     }
   },
   frameguard: { action: 'sameorigin' },
@@ -141,7 +162,11 @@ const scanLimiter = rateLimit({
 });
 
 app.use(cookieParser());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -160,6 +185,12 @@ app.use('/api/team', teamRoutes);
 // Payments & Subscriptions API
 app.use('/api/payment', paymentRoutes);
 
+// Domain Ownership Verification API
+app.use('/api/domains', domainRoutes);
+
+// Continuous Scheduled Monitoring API
+app.use('/api/monitoring', monitoringRoutes);
+
 // Screenshot API - 5 per minute (Puppeteer is heavy)
 const screenshotLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -174,6 +205,39 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log(`[socket] Client disconnected: ${socket.id}`);
   });
+});
+
+// 404 Handler for unmatched routes
+app.use((req, res, next) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Wire Sentry error handling before custom global error handler
+if (typeof Sentry.setupExpressErrorHandler === 'function') {
+  Sentry.setupExpressErrorHandler(app);
+}
+
+// Global Error Handler Middleware (MUST be the last app.use with 4 arguments: err, req, res, next)
+app.use((err, req, res, next) => {
+  // Log the full error stack server-side
+  console.error(err.stack || err);
+
+  // Route through Sentry when configured
+  if (process.env.SENTRY_DSN) {
+    Sentry.captureException(err);
+  }
+
+  const status = err.status || err.statusCode || 500;
+
+  // Never leak error stacks or internal error messages in production
+  if (process.env.NODE_ENV === 'production') {
+    res.status(status).json({ error: 'Something went wrong' });
+  } else {
+    res.status(status).json({
+      error: 'Something went wrong',
+      message: err.message || String(err)
+    });
+  }
 });
 
 if (process.env.NODE_ENV !== 'test') {

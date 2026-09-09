@@ -4,5 +4,6 @@ module.exports = {
   transformIgnorePatterns: [],
   moduleNameMapper: {
     '^whoiser$': '<rootDir>/tests/mocks/whoiserMock.js'
-  }
+  },
+  setupFilesAfterEnv: ['<rootDir>/tests/setup.js']
 };

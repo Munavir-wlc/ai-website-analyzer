@@ -1,8 +1,9 @@
 const cheerio = require('cheerio');
-const { analyzeSecurityWithAI, detectTechnologies, auditOutdatedLibraries } = require('./aiEngine');
-const { checkSSL, checkDNS, checkExposedFiles, checkHttpMethods, portScan, analyzeRedirects, whoisLookup, fetchRobotsTxt } = require('./crawler');
+const { analyzeSecurityWithAI, auditOutdatedLibraries } = require('./aiEngine');
+const { fingerprint, detectTechnologies } = require('./techFingerprint');
+const { checkSSL, checkDNS, checkExposedFiles, checkHttpMethods, analyzeRedirects, whoisLookup, fetchRobotsTxt } = require('./crawler');
 const { detectWaf } = require('./wafDetector');
-const { scanCdnLibraries } = require('./cveScanner');
+const { scanCdnLibraries, matchCVEs } = require('./cveScanner');
 const { discoverApiEndpoints } = require('./apiDiscovery');
 
 /**
@@ -200,7 +201,8 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
     }
   })();
 
-  // Technology Stack Detection (run first for smart tech-scoped audits)
+  // Technology Stack & Fingerprint Detection
+  const techFingerprints = fingerprint(crawlerResult.html || '', crawlerResult.headers || {}, crawlerResult.url || '');
   const techStack = detectTechnologies(crawlerResult.html || '', crawlerResult.headers || {});
   const techList = [
     ...(techStack.cms || []),
@@ -232,23 +234,26 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
   if (onStep) onStep('file_check', 'completed');
 
   // Running Phase 2 passive checks in parallel
-  if (onStep) onStep('port_scan', 'in_progress');
   if (onStep) onStep('whois_check', 'in_progress');
   if (onStep) onStep('redirect_check', 'in_progress');
   if (onStep) onStep('robots_check', 'in_progress');
 
-  const [portScanData, whoisData, redirectData, robotsData] = await Promise.all([
-    portScan(domain).then(res => { if (onStep) onStep('port_scan', 'completed'); return res; }),
+  const [whoisData, redirectData, robotsData] = await Promise.all([
     whoisLookup(domain).then(res => { if (onStep) onStep('whois_check', 'completed'); return res; }),
     analyzeRedirects(crawlerResult.url, authOptions).then(res => { if (onStep) onStep('redirect_check', 'completed'); return res; }),
     fetchRobotsTxt(crawlerResult.url, authOptions).then(res => { if (onStep) onStep('robots_check', 'completed'); return res; })
   ]);
 
+  const portScanData = { scanned: false, openPorts: [], totalScanned: 0 };
+
   // 1. WAF Signature Detection
   const wafData = detectWaf(crawlerResult.headers || {}, crawlerResult.html || '');
 
-  // 2. Real-Time CVE Dependency Scanning (OSV Database check)
-  const liveCveFindings = await scanCdnLibraries(crawlerResult.html || '');
+  // 2. Real-Time CVE Dependency Scanning (OSV Database check via passive fingerprinting + CDN scripts)
+  const [liveCveFindings, techCveFindings] = await Promise.all([
+    scanCdnLibraries(crawlerResult.html || ''),
+    matchCVEs(techFingerprints)
+  ]);
 
   // 3. API & Swagger Spec Discovery
   const apiDiscoveryData = await discoverApiEndpoints(crawlerResult.html || '', crawlerResult.url, authOptions);
@@ -259,8 +264,16 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
   // Auditing technology versions for known static CVEs
   const staticCveFindings = auditOutdatedLibraries(crawlerResult.html || '');
 
-  // Merge findings
-  let findings = [...staticCveFindings, ...liveCveFindings, ...(headersGrade.findings || [])];
+  // Deduplicate and merge findings
+  const initialFindings = [...staticCveFindings, ...techCveFindings, ...liveCveFindings, ...(headersGrade.findings || [])];
+  const findings = [];
+  const seenFindingIds = new Set();
+  for (const f of initialFindings) {
+    if (!seenFindingIds.has(f.id)) {
+      seenFindingIds.add(f.id);
+      findings.push(f);
+    }
+  }
 
   // Append findings for exposed API doc endpoints
   if (apiDiscoveryData.swaggerDocs && apiDiscoveryData.swaggerDocs.length > 0) {
@@ -447,28 +460,9 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
 
   // --- Phase 2 Deterministic Security Audits ---
 
-  // 1. Open dangerous ports
-  if (portScanData && portScanData.openPorts) {
-    let hasDangerous = false;
-    for (const p of portScanData.openPorts) {
-      if (p.dangerous) {
-        hasDangerous = true;
-        const isHighRisk = [21, 22, 23, 3306, 5432, 6379, 27017].includes(p.port);
-        const severity = isHighRisk ? 'high' : 'medium';
-        findings.push({
-          id: `open-port-${p.port}`,
-          title: `Exposed Service Port: ${p.port} (${p.service})`,
-          severity,
-          category: 'Ports',
-          description: `Port ${p.port} hosting service ${p.service} is open and publicly accessible. Administrative or database interfaces should not be public.`,
-          remediation: `Configure firewall rules (e.g. iptables, security groups) to restrict access to port ${p.port} to trusted IP addresses only or close the service.`,
-          owasp: 'A05:2021 Security Misconfiguration'
-        });
-      }
-    }
-    if (!hasDangerous) {
-      positives.push('No dangerous administrative or database ports are exposed publicly.');
-    }
+  // 1. Passive Technology & CVE Verification
+  if (techCveFindings.length === 0 && liveCveFindings.length === 0) {
+    positives.push('No known critical CVE vulnerabilities matched in detected software components.');
   }
 
   // 2. Missing HTTPS redirection
@@ -726,6 +720,7 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
     dnsData,
     exposedFiles,
     techStack,
+    techFingerprints,
     cookieAudit,
     corsIssues,
     mixedContent,

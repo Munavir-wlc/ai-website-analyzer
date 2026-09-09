@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { io } from 'socket.io-client';
-import { CheckCircle2, Loader2, Circle, AlertCircle, ShieldCheck, ChevronDown, ChevronUp, Lock } from 'lucide-react';
+import { CheckCircle2, Loader2, Circle, AlertCircle, ShieldCheck, ChevronDown, ChevronUp, Lock, ExternalLink, Globe } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { useWorkspace } from '../lib/WorkspaceContext';
 
@@ -31,6 +32,7 @@ export default function ScanForm() {
   const [authHeader, setAuthHeader] = useState('');
   const [delay, setDelay] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [domainStatus, setDomainStatus] = useState({ checking: false, verified: false, hostname: '' });
   const [stepStates, setStepStates] = useState({
     crawling: 'pending',
     ssl_check: 'pending',
@@ -75,6 +77,55 @@ export default function ScanForm() {
       sessionStorage.removeItem('rescanUrl');
     }
   }, []);
+
+  // Check domain verification status when URL is entered
+  useEffect(() => {
+    if (!url || !url.trim()) {
+      setDomainStatus({ checking: false, verified: false, hostname: '' });
+      return;
+    }
+
+    let hostname = '';
+    try {
+      hostname = new URL(url.startsWith('http') ? url : 'https://' + url).hostname.toLowerCase();
+    } catch (_) {
+      hostname = url.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0].toLowerCase();
+    }
+
+    if (!hostname || !hostname.includes('.')) {
+      setDomainStatus({ checking: false, verified: false, hostname: '' });
+      return;
+    }
+
+    if (!token) {
+      setDomainStatus({ checking: false, verified: false, hostname });
+      return;
+    }
+
+    let isMounted = true;
+    setDomainStatus(prev => ({ ...prev, checking: true, hostname }));
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/domains/check/${hostname}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted) {
+            setDomainStatus({ checking: false, verified: !!data.verified, hostname });
+          }
+        }
+      } catch (_) {
+        if (isMounted) setDomainStatus({ checking: false, verified: false, hostname });
+      }
+    }, 400);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [url, token]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -396,8 +447,8 @@ export default function ScanForm() {
       )}
 
       {/* Target URL */}
-      <div>
-        <label htmlFor="url" className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+      <div className="space-y-2">
+        <label htmlFor="url" className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
           Target Domain / URL
         </label>
         <input
@@ -407,8 +458,33 @@ export default function ScanForm() {
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://example.com"
           required
-          className="w-full px-4 py-3 bg-white dark:bg-slate-950/80 border border-slate-205 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 transition-all shadow-sm"
+          className="w-full px-4 py-3 bg-white dark:bg-slate-950/80 border border-slate-205 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 transition-all shadow-sm font-mono text-sm"
         />
+
+        {/* Domain Verification Status Indicator */}
+        {domainStatus.hostname && (
+          <div className="pt-1">
+            {domainStatus.verified ? (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg">
+                <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>Verified Domain: Full active scanning & vulnerability fuzzing enabled</span>
+              </div>
+            ) : mode === 'full' ? (
+              <div className="flex items-center justify-between gap-2 text-xs text-slate-400 bg-slate-900/60 border border-slate-800 px-3 py-2 rounded-lg">
+                <div className="flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                  <span>Unverified domain: Passive checks will run. Active fuzzing & load tests require verification.</span>
+                </div>
+                <Link
+                  href="/domains"
+                  className="text-indigo-400 hover:text-indigo-300 font-semibold underline flex items-center gap-0.5 whitespace-nowrap"
+                >
+                  Verify <ExternalLink className="w-3 h-3" />
+                </Link>
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
 
       {/* Advanced Settings Toggle */}

@@ -1,24 +1,11 @@
 /**
  * Report Generator - Merges analyzer results into normalized report format
  */
+const scoringEngine = require('./scoringEngine');
 
-/** 0-100 to letter grade - KEEP UNCHANGED */
+/** 0-100 to letter grade */
 function scoreToGrade(score) {
-  if (score == null || score < 0) return 'F';
-  const s = Math.min(100, Math.round(score));
-  if (s >= 97) return 'A+';
-  if (s >= 93) return 'A';
-  if (s >= 90) return 'A-';
-  if (s >= 87) return 'B+';
-  if (s >= 83) return 'B';
-  if (s >= 80) return 'B-';
-  if (s >= 77) return 'C+';
-  if (s >= 73) return 'C';
-  if (s >= 70) return 'C-';
-  if (s >= 67) return 'D+';
-  if (s >= 63) return 'D';
-  if (s >= 60) return 'D-';
-  return 'F';
+  return scoringEngine.scoreToLetterGrade(score);
 }
 
 function normalizeFinding(finding) {
@@ -39,7 +26,21 @@ function normalizeFinding(finding) {
   };
 }
 
-function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled, loadTestResult, zapFindings, zapScanData }) {
+function generateReport({ 
+  securityResult, 
+  performanceResult,
+  accessibilityResult,
+  seoResult,
+  aiSearchResult,
+  crawlerResult,
+  url, 
+  scanDuration, 
+  scanMode, 
+  aiEnabled, 
+  loadTestResult, 
+  zapFindings, 
+  zapScanData 
+}) {
   const report = {
     url,
     domain: null,
@@ -70,7 +71,6 @@ function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled
       error: null
     },
     exposedFiles: [],
-    // New audit fields
     techStack: { cms: [], framework: [], server: [], analytics: [], libraries: [] },
     cookieAudit: [],
     corsIssues: [],
@@ -105,7 +105,13 @@ function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled
       status: 'not_requested',
       error: null,
       findingsCount: 0
-    }
+    },
+    // New expanded audit properties
+    performanceData: performanceResult || { opportunities: [], diagnostics: [], performanceScore: 100 },
+    accessibilityData: accessibilityResult || { findings: [], accessibilityScore: 100 },
+    seoData: seoResult || { findings: [], seoScore: 100, details: {} },
+    aiSearchData: aiSearchResult || { findings: [], aiSearchScore: 100, details: {} },
+    categoryScores: {}
   };
 
   if (zapScanData) {
@@ -150,39 +156,11 @@ function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled
   }
 
   if (securityResult) {
-    report.findings = (securityResult.findings || []).map(normalizeFinding);
-    
-    // Recalculate score dynamically to handle additional findings (like XSS/SQLi or multi-page issues)
-    let calculatedScore = 100;
-    for (const finding of report.findings) {
-      if (finding.id === 'sensitive-robots-paths') continue;
-      
-      const severity = finding.severity?.toLowerCase();
-      const deductions = {
-        critical: 20,
-        high: 15,
-        medium: 8,
-        low: 4
-      };
-      const points = deductions[severity] || 5;
-      calculatedScore -= points;
-    }
-
-    const robots = securityResult.robotsData || report.robotsData;
-    if (robots && robots.exists && robots.sensitiveFound && robots.sensitiveFound.length > 0) {
-      const robotsDeduction = Math.min(20, robots.sensitiveFound.length * 5);
-      calculatedScore -= robotsDeduction;
-    }
-
-    report.score = Math.max(0, calculatedScore);
-    report.grade = scoreToGrade(report.score);
-    report.overallScore = report.score;
-    report.overallGrade = report.grade;
     report.summary = securityResult.summary || '';
     report.positives = securityResult.positives || [];
     report.exposedFiles = securityResult.exposedFiles || [];
 
-    // Map new fields
+    // Map security fields
     report.techStack = securityResult.techStack || report.techStack;
     report.cookieAudit = securityResult.cookieAudit || [];
     report.corsIssues = securityResult.corsIssues || [];
@@ -197,6 +175,61 @@ function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled
     report.authCookie = securityResult.authCookie || '';
     report.authHeader = securityResult.authHeader || '';
     report.crawledPages = securityResult.crawledPages || [];
+
+    // Calculate VAPT Security Score
+    let criticalCount = 0;
+    let highCount = 0;
+    let mediumCount = 0;
+    let lowCount = 0;
+
+    for (const finding of (securityResult.findings || [])) {
+      const severity = finding.severity?.toLowerCase();
+      if (severity === 'critical') criticalCount++;
+      else if (severity === 'high') highCount++;
+      else if (severity === 'medium') mediumCount++;
+      else if (severity === 'low') lowCount++;
+    }
+    const secScore = Math.max(0, 100 - (30 * criticalCount) - (15 * highCount) - (5 * mediumCount) - (2 * lowCount));
+    report.securityScore = secScore;
+
+    // Run scoring engine
+    const categoryScores = scoringEngine.calculateScores({
+      securityResult: { score: secScore },
+      performanceResult,
+      seoResult,
+      accessibilityResult,
+      aiSearchResult,
+      crawlerResult: crawlerResult || { html: '' }
+    });
+
+    report.categoryScores = categoryScores;
+    report.score = categoryScores.overall;
+    report.grade = categoryScores.overallGrade;
+    report.overallScore = categoryScores.overall;
+    report.overallGrade = categoryScores.overallGrade;
+
+    // Map Performance opportunities as findings
+    const perfFindings = (performanceResult?.opportunities || []).map(o => ({
+      id: o.id,
+      title: o.title,
+      severity: o.severity,
+      category: 'Performance',
+      description: o.description,
+      remediation: o.remediation
+    }));
+
+    // Merge all findings
+    const allFindings = [
+      ...(securityResult.findings || []),
+      ...perfFindings,
+      ...(accessibilityResult?.findings || []),
+      ...(seoResult?.findings || []),
+      ...(aiSearchResult?.findings || []),
+      ...(categoryScores.contentFindings || [])
+    ].map(normalizeFinding);
+
+    report.findings = allFindings;
+    report.vulnerabilities = allFindings;
 
     // Parse SSL details
     if (securityResult.sslData) {
@@ -265,38 +298,10 @@ function generateReport({ securityResult, url, scanDuration, scanMode, aiEnabled
 
     report.complianceFlags = { gdpr, pci, hipaa };
 
-    // Calculate critical, high, medium, low counts across findings
-    let criticalCount = 0;
-    let highCount = 0;
-    let mediumCount = 0;
-    let lowCount = 0;
-
-    for (const finding of report.findings) {
-      const severity = finding.severity?.toLowerCase();
-      if (severity === 'critical') criticalCount++;
-      else if (severity === 'high') highCount++;
-      else if (severity === 'medium') mediumCount++;
-      else if (severity === 'low') lowCount++;
-    }
-
-    // Compute the VAPT Security Score formula: 100 - (30 * critical) - (15 * high) - (5 * medium) - (2 * low)
-    const zapScore = 100 - (30 * criticalCount) - (15 * highCount) - (5 * mediumCount) - (2 * lowCount);
-    report.securityScore = Math.max(0, zapScore);
-    report.critical = criticalCount;
-    report.high = highCount;
-    report.medium = mediumCount;
-    report.low = lowCount;
-
-    // Override main score and grade to align the dashboard charts
-    if (Array.isArray(zapFindings) && zapFindings.length > 0) {
-      report.score = report.securityScore;
-      report.grade = scoreToGrade(report.score);
-      report.overallScore = report.score;
-      report.overallGrade = report.grade;
-    }
-
-    // Populate vulnerabilities list
-    report.vulnerabilities = report.findings;
+    report.critical = breakdown.critical;
+    report.high = breakdown.high;
+    report.medium = breakdown.medium;
+    report.low = breakdown.low;
 
     // Compile recommendations
     report.recommendations = report.findings.map((f) => ({

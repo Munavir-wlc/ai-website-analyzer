@@ -1,0 +1,65 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main, feature-expansion, security-lockdown ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install Workspace Dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      # Cache mongodb-memory-server binaries so CI doesn't re-download MongodDB on every run.
+      # Key includes backend/package.json hash so it invalidates when deps change.
+      - name: Cache mongodb-memory-server binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-memory-server
+          key: ${{ runner.os }}-mongodb-memory-server-${{ hashFiles('backend/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-mongodb-memory-server-
+
+      # Cache Puppeteer's Chrome download for the same reason.
+      - name: Cache Puppeteer Chrome
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/puppeteer
+          key: ${{ runner.os }}-puppeteer-${{ hashFiles('backend/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-puppeteer-
+
+      - name: Verify Backend Unit Tests
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test_jwt_secret_key_1234567890
+          REDIS_URL: redis://localhost:6379
+        run: |
+          cd backend
+          pnpm test

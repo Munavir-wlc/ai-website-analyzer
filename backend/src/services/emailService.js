@@ -180,4 +180,161 @@ async function sendPasswordResetEmail({ toEmail, userName, resetLink }) {
   }
 }
 
-module.exports = { sendTeamInviteEmail, sendPasswordResetEmail };
+/**
+ * Send Monitoring Change Intelligence Alert Email
+ * @param {Object} options
+ * @param {string} options.toEmail - Recipient email address
+ * @param {string} options.targetUrl - Scanned URL
+ * @param {string} options.domain - Domain hostname
+ * @param {number} options.currentScore - Latest overall score
+ * @param {number} options.previousScore - Previous overall score
+ * @param {number} options.scoreDelta - Score change points
+ * @param {Array} options.newFindings - Newly detected vulnerability findings
+ * @param {Array} options.resolvedFindings - Newly resolved findings
+ * @param {string} options.alertReason - Trigger reason
+ * @param {string} options.reportUrl - URL to view the report
+ */
+async function sendMonitoringAlertEmail({
+  toEmail,
+  targetUrl,
+  domain,
+  currentScore,
+  previousScore,
+  scoreDelta,
+  newFindings = [],
+  resolvedFindings = [],
+  alertReason = 'Website Security & Performance Change Detected',
+  reportUrl = 'https://ai-website-analyzer.com/monitoring'
+}) {
+  try {
+    let transporter;
+
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587', 10),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        }
+      });
+    } else {
+      const testAccount = await nodemailer.createTestAccount().catch(() => null);
+      if (testAccount) {
+        transporter = nodemailer.createTransport({
+          host: 'smtp.ethereal.email',
+          port: 587,
+          secure: false,
+          auth: {
+            user: testAccount.user,
+            pass: testAccount.pass
+          }
+        });
+      } else {
+        transporter = nodemailer.createTransport({
+          jsonTransport: true
+        });
+      }
+    }
+
+    const deltaSign = scoreDelta > 0 ? `+${scoreDelta}` : `${scoreDelta}`;
+    const deltaColor = scoreDelta > 0 ? '#10b981' : scoreDelta < 0 ? '#f43f5e' : '#94a3b8';
+
+    const newFindingsHtml = newFindings.length > 0 ? `
+      <div style="margin-top: 20px;">
+        <h3 style="color: #f43f5e; font-size: 14px; text-transform: uppercase; margin-bottom: 8px;">
+          🚨 New Vulnerabilities (${newFindings.length})
+        </h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          ${newFindings.slice(0, 5).map(f => `
+            <tr style="border-bottom: 1px solid #334155;">
+              <td style="padding: 8px 0; color: #f8fafc; font-weight: bold;">${f.title}</td>
+              <td style="padding: 8px 0; text-align: right; color: ${f.severity === 'critical' ? '#f43f5e' : f.severity === 'high' ? '#fb923c' : '#fbbf24'}; text-transform: uppercase; font-size: 11px; font-weight: bold;">
+                ${f.severity || 'Medium'}
+              </td>
+            </tr>
+          `).join('')}
+        </table>
+      </div>
+    ` : '';
+
+    const resolvedFindingsHtml = resolvedFindings.length > 0 ? `
+      <div style="margin-top: 20px;">
+        <h3 style="color: #10b981; font-size: 14px; text-transform: uppercase; margin-bottom: 8px;">
+          ✅ Resolved Findings (${resolvedFindings.length})
+        </h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          ${resolvedFindings.slice(0, 5).map(f => `
+            <tr style="border-bottom: 1px solid #334155;">
+              <td style="padding: 8px 0; color: #94a3b8; text-decoration: line-through;">${f.title}</td>
+              <td style="padding: 8px 0; text-align: right; color: #10b981; font-size: 11px; font-weight: bold;">FIXED</td>
+            </tr>
+          `).join('')}
+        </table>
+      </div>
+    ` : '';
+
+    const htmlContent = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #090d16; color: #f8fafc; padding: 40px 20px; max-width: 600px; margin: 0 auto; border-radius: 20px;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <h1 style="color: #818cf8; margin: 0; font-size: 22px; letter-spacing: -0.5px;">AI Website Monitoring Alert</h1>
+          <p style="color: #94a3b8; font-size: 13px; margin-top: 4px;">Automated Continuous Health & Security Intelligence</p>
+        </div>
+
+        <div style="background-color: #131b2e; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; margin-bottom: 24px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 16px;">
+            <div>
+              <span style="color: #94a3b8; font-size: 11px; text-transform: uppercase; font-weight: bold;">Monitored Target</span>
+              <h2 style="color: #ffffff; font-size: 18px; margin: 2px 0 0 0;">${domain || targetUrl}</h2>
+            </div>
+            <div style="text-align: right;">
+              <span style="color: #94a3b8; font-size: 11px; text-transform: uppercase; font-weight: bold;">Score</span>
+              <div style="font-size: 20px; font-weight: 800; color: #ffffff;">
+                ${currentScore}/100 <span style="font-size: 13px; color: ${deltaColor}; font-weight: bold;">(${deltaSign})</span>
+              </div>
+            </div>
+          </div>
+
+          <p style="color: #cbd5e1; font-size: 14px; line-height: 1.5; margin: 0;">
+            <strong>Alert Trigger:</strong> ${alertReason}
+          </p>
+
+          ${newFindingsHtml}
+          ${resolvedFindingsHtml}
+
+          <div style="text-align: center; margin: 32px 0 12px 0;">
+            <a href="${reportUrl}" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #ffffff; font-weight: bold; text-decoration: none; padding: 12px 28px; border-radius: 10px; display: inline-block; font-size: 14px;">
+              View Full "What Changed?" Report →
+            </a>
+          </div>
+        </div>
+
+        <div style="text-align: center; color: #64748b; font-size: 11px;">
+          <p style="margin: 0;">AI Website Analyzer Continuous Monitoring</p>
+          <p style="margin: 4px 0 0 0;">You received this email based on your notification preferences for ${domain}.</p>
+        </div>
+      </div>
+    `;
+
+    const info = await transporter.sendMail({
+      from: process.env.SMTP_FROM || '"AI Website Analyzer" <alerts@vapt-analyzer.com>',
+      to: toEmail,
+      subject: `[Security Alert] ${domain}: Score ${currentScore}/100 (${deltaSign}) - ${alertReason}`,
+      html: htmlContent
+    });
+
+    console.log(`[Email Service] Monitoring alert sent to ${toEmail}. MessageID: ${info.messageId}`);
+    return {
+      success: true,
+      messageId: info.messageId,
+      previewUrl: nodemailer.getTestMessageUrl(info) || null
+    };
+  } catch (err) {
+    console.error('[Email Service Alert Error]:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+module.exports = { sendTeamInviteEmail, sendPasswordResetEmail, sendMonitoringAlertEmail };
+

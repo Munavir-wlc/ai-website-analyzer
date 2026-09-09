@@ -39,6 +39,33 @@ function isPrivateIPv6(ip) {
   if (normalized.startsWith('fe80:')) return true;
   if (normalized.startsWith('fc00:') || normalized.startsWith('fd00:')) return true;
   
+  // Handle IPv4-mapped IPv6 (e.g., ::ffff:127.0.0.1 or ::ffff:7f00:1)
+  if (normalized.includes('::ffff:')) {
+    const parts = normalized.split(':');
+    const lastPart = parts[parts.length - 1];
+    
+    // Case 1: Dot-decimal suffix (e.g. ::ffff:127.0.0.1)
+    if (net.isIPv4(lastPart)) {
+      return isPrivateIPv4(lastPart);
+    }
+    
+    // Case 2: Hex suffix (e.g. ::ffff:7f00:0001)
+    const seg1 = parts[parts.length - 2];
+    const seg2 = parts[parts.length - 1];
+    if (seg1 && seg2 && seg1.length <= 4 && seg2.length <= 4) {
+      const s1 = seg1.padStart(4, '0');
+      const s2 = seg2.padStart(4, '0');
+      const h1 = parseInt(s1.substring(0, 2), 16);
+      const h2 = parseInt(s1.substring(2, 4), 16);
+      const h3 = parseInt(s2.substring(0, 2), 16);
+      const h4 = parseInt(s2.substring(2, 4), 16);
+      if (!isNaN(h1) && !isNaN(h2) && !isNaN(h3) && !isNaN(h4)) {
+        const ipv4 = `${h1}.${h2}.${h3}.${h4}`;
+        return isPrivateIPv4(ipv4);
+      }
+    }
+  }
+  
   return false;
 }
 
@@ -108,4 +135,4 @@ async function isSafeUrl(targetUrlOrHost) {
   }
 }
 
-module.exports = { isSafeUrl };
+module.exports = { isSafeUrl, isPrivateIPv4, isPrivateIPv6 };

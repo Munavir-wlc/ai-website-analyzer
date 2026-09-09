@@ -5,6 +5,10 @@ const crawler = require('../services/crawler');
 const securityAnalyzer = require('../services/securityAnalyzer');
 const reportGenerator = require('../services/reportGenerator');
 const { crawlSite } = require('../services/siteCrawler');
+const performanceAnalyzer = require('../services/performanceAnalyzer');
+const accessibilityAnalyzer = require('../services/accessibilityAnalyzer');
+const seoAnalyzer = require('../services/seoAnalyzer');
+const aiSearchAnalyzer = require('../services/aiSearchAnalyzer');
 const { auditActiveVulnerabilities } = require('../services/activeScanner');
 const { auditLoadResilience } = require('../services/loadTester');
 const { isSafeUrl } = require('../utils/ssrfGuard');
@@ -17,6 +21,46 @@ const { scanCdnLibraries } = require('../services/cveScanner');
 const { scanSubdomains } = require('../services/subdomainScanner');
 const { addScanJob } = require('../services/scanQueue');
 const { generateReportPDF } = require('../services/pdfGenerator');
+const Scan = require('../models/Scan');
+const Domain = require('../models/Domain');
+
+async function checkScanAccess(scan, user) {
+  // If public
+  if (scan.isPublic) {
+    return {
+      allowed: true,
+      belongsToCurrentUser: !!(user && scan.userId && scan.userId.toString() === user._id.toString()),
+      isGuest: false
+    };
+  }
+  
+  // If guest scan (no owner)
+  if (!scan.userId && !scan.teamId) {
+    return { allowed: true, belongsToCurrentUser: false, isGuest: true };
+  }
+  
+  // If user is authenticated
+  if (user) {
+    // If owner
+    if (scan.userId && scan.userId.toString() === user._id.toString()) {
+      return { allowed: true, belongsToCurrentUser: true, isGuest: false };
+    }
+    
+    // If part of team
+    if (scan.teamId) {
+      const Team = require('../models/Team');
+      const isMember = await Team.exists({
+        _id: scan.teamId,
+        'members.userId': user._id
+      });
+      if (isMember) {
+        return { allowed: true, belongsToCurrentUser: false, isGuest: false };
+      }
+    }
+  }
+  
+  return { allowed: false };
+}
 
 function buildFinalReport(scanId, report, scanStatus = {}) {
   return {
@@ -50,8 +94,6 @@ function buildFinalReport(scanId, report, scanStatus = {}) {
     headersGrade: report.headersGrade,
     loadTestData: report.loadTestData,
     zapScanData: report.zapScanData,
-    authCookie: report.authCookie || '',
-    authHeader: report.authHeader || '',
     crawledPages: report.crawledPages || [],
     subdomainData: report.subdomainData || { scanned: false, discovered: [], sensitiveFound: [], totalDiscovered: 0 },
     scanStatus
@@ -107,55 +149,40 @@ router.get('/results/:scanId', optionalAuth, async (req, res) => {
       return res.status(404).json({ error: 'Scan report not found or expired.' });
     }
 
-    // A. Allow read-only access for publicly shared reports
-    if (scan.isPublic) {
-      console.log(`[scanRoutes] Returning public shared report for ID: ${scanId}`);
-      const belongsToCurrentUser = !!(req.user && scan.userId && scan.userId.toString() === req.user._id.toString());
+    const access = await checkScanAccess(scan, req.user);
+    if (!access.allowed) {
+      return res.status(req.user ? 403 : 401).json({ error: req.user ? 'You are not authorized to view this report.' : 'Authentication required to view this report.' });
+    }
+
+    // If it was a guest scan and a user is logged in, claim it!
+    if (access.isGuest && req.user) {
+      scan.userId = req.user._id;
+      scan.expiresAt = null; // Claimed scans should never expire
+      await scan.save();
+      access.belongsToCurrentUser = true;
+      access.isGuest = false;
+      console.log(`[scanRoutes] Guest scan ${scanId} claimed by user ${req.user._id}`);
+    }
+
+    if (access.isGuest) {
+      // Return masked report for guests
+      console.log(`[scanRoutes] Returning masked guest scan report for ID: ${scanId}`);
       return res.json({
-        ...scan.report,
-        scanId: scan.scanId,
-        teamId: scan.teamId,
-        isPublic: true,
-        belongsToCurrentUser
+        ...maskReportForGuests(scan.report),
+        isPublic: false,
+        belongsToCurrentUser: false
       });
     }
 
-    // If request is authenticated
-    if (req.user) {
-      // If scan currently has no owner (guest scan), claim it!
-      if (!scan.userId) {
-        scan.userId = req.user._id;
-        scan.expiresAt = null; // Claimed scans should never expire
-        await scan.save();
-        console.log(`[scanRoutes] Guest scan ${scanId} claimed by user ${req.user._id}`);
-      } else if (scan.userId.toString() !== req.user._id.toString()) {
-        // If scan belongs to someone else
-        return res.status(403).json({ error: 'You are not authorized to view this report.' });
-      }
-      
-      console.log(`[scanRoutes] Scan report found successfully for ID: ${scanId}`);
-      return res.json({
-        ...scan.report,
-        scanId: scan.scanId,
-        teamId: scan.teamId,
-        isPublic: !!scan.isPublic,
-        belongsToCurrentUser: true,
-        findingStatuses: scan.findingStatuses ? Object.fromEntries(scan.findingStatuses) : {}
-      });
-    }
-
-    // If request is NOT authenticated (Guest)
-    if (scan.userId) {
-      // If scan belongs to a user, guests cannot view it at all
-      return res.status(401).json({ error: 'Authentication required to view this report.' });
-    }
-
-    // Return masked report for guests (no local scans bypass)
-    console.log(`[scanRoutes] Returning masked guest scan report for ID: ${scanId}`);
+    // Return full report for authorized users/teams
+    console.log(`[scanRoutes] Scan report found successfully for ID: ${scanId}`);
     res.json({
-      ...maskReportForGuests(scan.report),
-      isPublic: false,
-      belongsToCurrentUser: false
+      ...scan.report,
+      scanId: scan.scanId,
+      teamId: scan.teamId,
+      isPublic: !!scan.isPublic,
+      belongsToCurrentUser: access.belongsToCurrentUser,
+      findingStatuses: scan.findingStatuses ? Object.fromEntries(scan.findingStatuses) : {}
     });
   } catch (err) {
     console.error(`[scanRoutes] Failed to read scan report ${scanId}:`, err);
@@ -170,8 +197,8 @@ router.get('/capabilities', (req, res) => {
 // PATCH /api/scan/results/:scanId/findings/:findingId/status
 router.patch('/results/:scanId/findings/:findingId/status', protect, async (req, res) => {
   const { scanId, findingId } = req.params;
-  const { status } = req.body;
-  const validStatuses = ['open', 'accepted', 'in_progress'];
+  const { status, note } = req.body;
+  const validStatuses = ['open', 'accepted', 'in_progress', 'ignored', 'resolved'];
   if (!validStatuses.includes(status)) {
     return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
   }
@@ -430,12 +457,24 @@ router.get('/compare', protect, async (req, res) => {
 });
 
 // POST /api/scan/chat - AI Vulnerability Assistant Chat
-router.post('/chat', async (req, res) => {
-  const { finding, messages } = req.body;
-  if (!finding || !finding.title) {
-    return res.status(400).json({ error: 'Finding context is required.' });
+router.post('/chat', optionalAuth, async (req, res) => {
+  const { scanId, finding, messages } = req.body;
+  if (!finding || !finding.title || !scanId) {
+    return res.status(400).json({ error: 'Finding context and scanId are required.' });
   }
   try {
+    const Scan = require('../models/Scan');
+    const scan = await Scan.findOne({ scanId });
+    if (!scan) {
+      return res.status(404).json({ error: 'Associated scan report not found.' });
+    }
+
+    // Verify access permissions to the scan report
+    const access = await checkScanAccess(scan, req.user);
+    if (!access.allowed) {
+      return res.status(req.user ? 403 : 401).json({ error: req.user ? 'You are not authorized to access this scan context.' : 'Authentication required to access this scan context.' });
+    }
+
     const { chatWithFindingAssistant } = require('../services/aiEngine');
     const reply = await chatWithFindingAssistant(finding, messages || []);
     res.json({ reply });
@@ -462,17 +501,12 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
     }
 
     const hasConsent = !!consent;
-    const scanMode = mode || 'full'; // 'quick' or 'full'
+    const scanMode = mode || 'full'; // 'quick', 'passive', 'full', 'active', 'verified'
     const throttleDelay = Math.min(5000, Math.max(0, parseInt(delay, 10) || 0));
     const useAuthenticatedScan = capabilities.authenticatedScans;
     const authOptions = useAuthenticatedScan ? { authCookie, authHeader } : {};
     authCookie = authOptions.authCookie || '';
     authHeader = authOptions.authHeader || '';
-    const shouldRunActive = scanMode === 'full' && capabilities.activeScans;
-    const shouldRunLoadTest = scanMode === 'full' && capabilities.loadTesting;
-    const shouldRunZap = scanMode === 'full' && capabilities.zapScans; // Automatically enable ZAP for every deep scan if enabled
-    const runAi = capabilities.aiFindings && hasConsent && scanMode === 'full';
-    let activeScanData = { scanned: false, status: scanMode === 'full' && !capabilities.activeScans ? 'disabled' : 'not_applicable', findingsCount: 0 };
 
     // Normalize URL
     const normalizedUrl = crawler.normalizeUrl(url);
@@ -480,6 +514,64 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
     // Validate hostname resolving target to block private IPs
     if (!await isSafeUrl(normalizedUrl)) {
       return res.status(400).json({ error: 'URL blocked: Private, local, or loopback network addresses are not permitted.' });
+    }
+
+    // Extract hostname for domain verification check
+    let targetHostname = '';
+    try {
+      targetHostname = new URL(normalizedUrl).hostname.toLowerCase();
+    } catch (_) {
+      targetHostname = normalizedUrl.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0].toLowerCase();
+    }
+
+    let isDomainVerified = false;
+    if (userId && targetHostname) {
+      const verifiedDomain = await Domain.findOne({ userId, hostname: targetHostname, verified: true });
+      isDomainVerified = !!verifiedDomain;
+    }
+
+    // Explicit active/verified scan mode gating: reject if domain is unverified
+    const isExplicitActive = scanMode === 'active' || scanMode === 'verified';
+    if (isExplicitActive && !isDomainVerified) {
+      return res.status(403).json({
+        error: 'Domain ownership verification required for active scanning. Please verify domain ownership under /domains first.',
+        unverifiedDomain: targetHostname
+      });
+    }
+
+    const isPassiveOnly = scanMode === 'quick' || scanMode === 'passive';
+    const activeAllowed = isDomainVerified;
+    const shouldRunActive = !isPassiveOnly && activeAllowed && capabilities.activeScans;
+    const shouldRunLoadTest = !isPassiveOnly && activeAllowed && capabilities.loadTesting;
+    const shouldRunZap = !isPassiveOnly && activeAllowed && capabilities.zapScans; // OWASP ZAP active scan gated by verification
+    const runAi = capabilities.aiFindings && hasConsent && !isPassiveOnly;
+    let activeScanData = { 
+      scanned: false, 
+      status: !isPassiveOnly && !activeAllowed ? 'unverified_domain_skipped' : (capabilities.activeScans ? 'not_applicable' : 'disabled'), 
+      findingsCount: 0 
+    };
+
+    // 6-hour Cache Check (Performance Optimization)
+    const forceRescan = req.query.force === 'true' || req.body.force === 'true';
+    if (!forceRescan) {
+      const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
+      const existingScan = await Scan.findOne({
+        url: normalizedUrl,
+        createdAt: { $gte: sixHoursAgo },
+        score: { $exists: true }
+      }).sort({ createdAt: -1 });
+
+      if (existingScan) {
+        console.log(`[scan] Cache hit for URL: ${normalizedUrl}. Returning existing scan ID: ${existingScan.scanId}`);
+        return res.status(200).json({
+          scanId: existingScan.scanId,
+          status: 'cached',
+          message: 'Recent scan results found in cache.',
+          score: existingScan.score,
+          grade: existingScan.grade,
+          report: existingScan.report
+        });
+      }
     }
 
     // Get io instance
@@ -553,13 +645,14 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
     
     const securityResult = await securityAnalyzer.analyzeSecurity(crawlerResult, runAi, onStep);
 
+    let siteCrawl = null;
     // If full scan mode is enabled, run multi-page crawling and active form probing
     if (scanMode === 'full') {
       // 1. Multi-page passive audit (mixed-content and cookies flags)
       emitStep('crawling', 'in_progress', { message: 'Mapping site pages...' });
       try {
         console.log(`[scan] [${scanId}] Initiating multi-page audit via siteCrawler`);
-        const siteCrawl = await crawlSite(normalizedUrl, authOptions);
+        siteCrawl = await crawlSite(normalizedUrl, authOptions);
         if (siteCrawl && siteCrawl.pages && siteCrawl.pages.length > 1) {
           const cheerio = require('cheerio');
           for (const page of siteCrawl.pages) {
@@ -671,7 +764,12 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
       }
     }
 
-    let loadTestResult = { scanned: false, verdict: scanMode === 'full' && !capabilities.loadTesting ? 'Skipped: Load resilience testing is disabled.' : 'Skipped: Load resilience test is only executed in Full scan mode.' };
+    let loadTestResult = { 
+      scanned: false, 
+      verdict: !activeAllowed && !isPassiveOnly 
+        ? 'Skipped: Load resilience testing requires verified domain ownership.' 
+        : (capabilities.loadTesting ? 'Skipped: Load resilience test is only executed in Full/Active scan mode on verified domains.' : 'Skipped: Load resilience testing is disabled.') 
+    };
     if (shouldRunLoadTest) {
       // 3. Load Resilience & Rate Limiting Test
       emitStep('load_test', 'in_progress', { message: 'Auditing load resilience & rate limiting...' });
@@ -725,11 +823,50 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
       emitStep('subdomain_scan', 'failed');
     }
 
+    // Run new audits (performance, accessibility, SEO, AI search)
+    let performanceResult = { opportunities: [], diagnostics: [], performanceScore: 100 };
+    let accessibilityResult = { findings: [], accessibilityScore: 100 };
+    let seoResult = { findings: [], seoScore: 100, details: {} };
+    let aiSearchResult = { findings: [], aiSearchScore: 100, details: {} };
+
+    try {
+      emitStep('crawling', 'in_progress', { message: 'Running Performance and Speed Index checks...' });
+      performanceResult = await performanceAnalyzer.analyzePerformance(normalizedUrl, authOptions);
+    } catch (err) {
+      console.error('Performance analysis failed:', err);
+    }
+
+    try {
+      emitStep('dns_check', 'in_progress', { message: 'Auditing WCAG accessibility standards...' });
+      accessibilityResult = await accessibilityAnalyzer.analyzeAccessibility(crawlerResult, siteCrawl);
+    } catch (err) {
+      console.error('Accessibility analysis failed:', err);
+    }
+
+    try {
+      emitStep('robots_check', 'in_progress', { message: 'Evaluating sitemap and technical SEO standards...' });
+      seoResult = await seoAnalyzer.analyzeSeo(crawlerResult, siteCrawl);
+    } catch (err) {
+      console.error('SEO analysis failed:', err);
+    }
+
+    try {
+      emitStep('ai_analysis', 'in_progress', { message: 'Analyzing AI Search and GEO visibility...' });
+      aiSearchResult = await aiSearchAnalyzer.analyzeAiSearch(crawlerResult, siteCrawl);
+    } catch (err) {
+      console.error('AI Search/GEO analysis failed:', err);
+    }
+
     const scanDuration = parseFloat(((Date.now() - startTime) / 1000).toFixed(2));
 
     // Generate the report
     const report = reportGenerator.generateReport({
       securityResult,
+      performanceResult,
+      accessibilityResult,
+      seoResult,
+      aiSearchResult,
+      crawlerResult,
       url: crawlerResult.url,
       scanDuration,
       scanMode,
@@ -747,6 +884,37 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
       requestedZap: shouldRunZap,
       zapRequestStatus: shouldRunZap ? 'completed' : (capabilities.zapScans ? 'not_applicable_for_quick_scan' : 'disabled')
     });
+
+    // Lookup previous scan for change intelligence and lifecycle management
+    let previousScan = null;
+    try {
+      const Scan = require('../models/Scan');
+      const { applyFindingLifecycle, computeScanDiff } = require('../services/findingTracker');
+      
+      if (userId) {
+        previousScan = await Scan.findOne({
+          userId,
+          url: crawlerResult.url,
+          scanId: { $ne: scanId }
+        }).sort({ createdAt: -1 });
+      }
+
+      applyFindingLifecycle({ report: finalReport, findingStatuses: {} }, previousScan);
+
+      if (previousScan) {
+        const diff = computeScanDiff(previousScan, { report: finalReport, score: finalReport.score, scanMode });
+        finalReport.previousScanDetails = {
+          scanId: previousScan.scanId,
+          score: previousScan.score,
+          grade: previousScan.grade,
+          scanDate: previousScan.createdAt
+        };
+        finalReport.scanDiff = diff;
+      }
+    } catch (lifecycleErr) {
+      console.warn('[scanRoutes] Lifecycle & diff tracking warning:', lifecycleErr.message);
+    }
+
     console.log(`[scanRoutes] Persisting sync scan report. ID: ${scanId}`);
     await saveReport(scanId, finalReport, userId, teamId);
 
@@ -790,12 +958,30 @@ router.post('/results/:scanId/share', protect, async (req, res) => {
 router.get(['/results/:scanId/pdf', '/:scanId/pdf'], optionalAuth, async (req, res) => {
   const { scanId } = req.params;
   try {
-    const reportData = await getReport(scanId);
-    if (!reportData) {
+    const Scan = require('../models/Scan');
+    const scan = await Scan.findOne({ scanId });
+    if (!scan) {
       return res.status(404).json({ error: 'Scan report not found' });
     }
 
-    const pdfBuffer = await generateReportPDF(reportData);
+    const access = await checkScanAccess(scan, req.user);
+    if (!access.allowed) {
+      return res.status(req.user ? 403 : 401).json({ error: req.user ? 'You are not authorized to view this report.' : 'Authentication required to view this report.' });
+    }
+
+    // Guest scans claim logic
+    if (access.isGuest && req.user) {
+      scan.userId = req.user._id;
+      scan.expiresAt = null;
+      await scan.save();
+      access.isGuest = false;
+    }
+
+    if (access.isGuest) {
+      return res.status(401).json({ error: 'Authentication required. Guests cannot download PDF reports.' });
+    }
+
+    const pdfBuffer = await generateReportPDF(scan.report);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=security-report-${scanId}.pdf`);
