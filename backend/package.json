@@ -10,6 +10,7 @@
     "test": "jest --runInBand"
   },
   "dependencies": {
+    "@sentry/node": "^10.73.0",
     "axios": "^1.6.2",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.81.2",
@@ -27,6 +28,7 @@
     "puppeteer": "^21.11.0",
     "socket.io": "^4.8.3",
     "ssl-checker": "^3.0.1",
+    "stripe": "^22.6.1",
     "whoiser": "^2.0.0-beta.10"
   },
   "engines": {

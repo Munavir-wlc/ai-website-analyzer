@@ -320,6 +320,7 @@ describe('Continuous Website Monitoring & Change Intelligence Tests', () => {
         url: 'https://history-site.com',
         score: 80,
         grade: 'B',
+        createdAt: new Date(Date.now() - 3600000), // 1 hour ago
         report: { scores: { security: 80, performance: 85, accessibility: 90, seo: 80, aiSearch: 75 }, findings: [] }
       });
 
@@ -329,6 +330,7 @@ describe('Continuous Website Monitoring & Change Intelligence Tests', () => {
         url: 'https://history-site.com',
         score: 90,
         grade: 'A',
+        createdAt: new Date(), // current
         report: { scores: { security: 90, performance: 90, accessibility: 95, seo: 85, aiSearch: 80 }, findings: [] }
       });
 
