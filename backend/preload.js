@@ -6,3 +6,11 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 if (typeof globalThis.File === 'undefined') {
   globalThis.File = class File {};
 }
+
+// Node 18 compatibility: Mongoose 9 / mongodb driver 7 expects global crypto.getRandomValues
+if (!globalThis.crypto) {
+  try {
+    const nodeCrypto = require('crypto');
+    globalThis.crypto = nodeCrypto.webcrypto || nodeCrypto;
+  } catch (_) {}
+}

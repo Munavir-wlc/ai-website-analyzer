@@ -1,3 +1,11 @@
+// Node 18 compatibility: Mongoose 9 / mongodb driver 7 expects global crypto.getRandomValues
+if (!globalThis.crypto) {
+  try {
+    const nodeCrypto = require('crypto');
+    globalThis.crypto = nodeCrypto.webcrypto || nodeCrypto;
+  } catch (_) {}
+}
+
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
