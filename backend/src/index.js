@@ -58,11 +58,11 @@ const { setIo } = require('./utils/socket');
 const { initScanWorker } = require('./services/scanWorker');
 const { startMonitorScheduler } = require('./services/monitorScheduler');
 
-// Connect to MongoDB
-connectDB();
-
-// Initialize scheduled continuous monitoring dispatcher
-startMonitorScheduler();
+// Connect to MongoDB & initialize scheduler (production/development only)
+if (process.env.NODE_ENV !== 'test') {
+  connectDB();
+  startMonitorScheduler();
+}
 
 const app = express();
 const PORT = process.env.PORT || 4000;

@@ -6,15 +6,19 @@ if (!globalThis.crypto) {
   } catch (_) {}
 }
 
+// Ensure test secrets & fallback MONGODB_URI are set before any model/validator require
+process.env.NODE_ENV = 'test';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_key_1234567890';
+process.env.MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/test_placeholder';
+
+jest.setTimeout(60000);
+
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
 let mongoServer;
 
 beforeAll(async () => {
-  // Set test environment secrets
-  process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_key_1234567890';
-  
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
   
@@ -27,7 +31,7 @@ beforeAll(async () => {
   }
   
   await mongoose.connect(mongoUri);
-});
+}, 60000);
 
 afterAll(async () => {
   if (mongoose.connection.readyState !== 0) {
@@ -36,4 +40,4 @@ afterAll(async () => {
   if (mongoServer) {
     await mongoServer.stop();
   }
-});
+}, 30000);

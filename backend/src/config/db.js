@@ -1,6 +1,9 @@
 const mongoose = require('mongoose');
 
 const connectDB = async () => {
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
   try {
     const connStr = process.env.MONGODB_URI || 'mongodb://localhost:27017/ai-website-analyzer';
     const conn = await mongoose.connect(connStr);
@@ -8,7 +11,9 @@ const connectDB = async () => {
   } catch (error) {
     console.error(`[MongoDB] Connection failed: ${error.message}`);
     console.error('[MongoDB] Please ensure MongoDB is running and MONGODB_URI is correctly configured in your .env file.');
-    process.exit(1);
+    if (process.env.NODE_ENV !== 'test') {
+      process.exit(1);
+    }
   }
 };
 
