@@ -9,7 +9,13 @@ const { discoverApiEndpoints } = require('./apiDiscovery');
 /**
  * Grader engine for HTTP Security Headers (A+ to F rating)
  */
-function gradeSecurityHeaders(headers, isHttps) {
+/**
+ * Grader engine for HTTP Security Headers (A+ to F rating).
+ * @param {object} headers   – raw response headers
+ * @param {boolean} isHttps  – whether the URL uses HTTPS
+ * @param {string} [affectedUrl] – the URL these headers came from (for evidence)
+ */
+function gradeSecurityHeaders(headers, isHttps, affectedUrl) {
   const normHeaders = {};
   for (const [k, v] of Object.entries(headers || {})) {
     normHeaders[k.toLowerCase()] = String(v).trim();
@@ -18,7 +24,7 @@ function gradeSecurityHeaders(headers, isHttps) {
   const reports = {};
   const findings = [];
 
-  const addHeaderFinding = (id, title, severity, desc, rem) => {
+  const addHeaderFinding = (id, title, severity, desc, rem, proof) => {
     findings.push({
       id,
       title,
@@ -26,7 +32,10 @@ function gradeSecurityHeaders(headers, isHttps) {
       category: 'Headers',
       description: desc,
       remediation: rem,
-      owasp: 'A05:2021 Security Misconfiguration'
+      owasp: 'A05:2021 Security Misconfiguration',
+      confidence: 'confirmed',
+      ...(affectedUrl ? { affectedUrl } : {}),
+      ...(proof !== undefined ? { proof } : {})
     });
   };
 
@@ -39,7 +48,8 @@ function gradeSecurityHeaders(headers, isHttps) {
       'Missing Content-Security-Policy (CSP) Header',
       'high',
       'The response does not send a Content-Security-Policy header, leaving the application highly vulnerable to Cross-Site Scripting (XSS) and data injection attacks.',
-      'Define a strong Content-Security-Policy header containing directives like default-src, script-src, and style-src.'
+      'Define a strong Content-Security-Policy header containing directives like default-src, script-src, and style-src.',
+      null
     );
   } else {
     const isUnsafe = /'unsafe-inline'|'unsafe-eval'|\*\s/i.test(csp);
@@ -50,7 +60,8 @@ function gradeSecurityHeaders(headers, isHttps) {
         'Weak Content-Security-Policy (CSP) Header Configured',
         'medium',
         `The Content-Security-Policy header is present but contains unsafe directives (e.g. 'unsafe-inline' or wildcards): "${csp}". This allows bypasses of script blocking.`,
-        'Refactor inline scripts to external files or use nonces/hashes, then remove unsafe-inline and wildcard sources from your CSP.'
+        'Refactor inline scripts to external files or use nonces/hashes, then remove unsafe-inline and wildcard sources from your CSP.',
+        csp
       );
     } else {
       reports['Content-Security-Policy'] = { status: 'secure', score: 100, value: csp, desc: 'CSP header is set with secure directives.' };
@@ -67,7 +78,8 @@ function gradeSecurityHeaders(headers, isHttps) {
       'Missing Clickjacking Protection',
       'medium',
       'The response does not set X-Frame-Options or CSP frame-ancestors. Attackers can embed this page inside an iframe to perform clickjacking attacks.',
-      'Configure the X-Frame-Options header to SAMEORIGIN or DENY, or use the CSP frame-ancestors directive.'
+      'Configure the X-Frame-Options header to SAMEORIGIN or DENY, or use the CSP frame-ancestors directive.',
+      null
     );
   } else {
     const val = xfo || 'Configured via CSP frame-ancestors';
@@ -83,7 +95,8 @@ function gradeSecurityHeaders(headers, isHttps) {
       'Missing X-Content-Type-Options Header',
       'medium',
       'The X-Content-Type-Options header is absent or misconfigured. Browsers might attempt to sniff content types, which can lead to script execution vulnerabilities.',
-      'Add the header "X-Content-Type-Options: nosniff" to all HTTP responses.'
+      'Add the header "X-Content-Type-Options: nosniff" to all HTTP responses.',
+      xcto || null
     );
   } else {
     reports['X-Content-Type-Options'] = { status: 'secure', score: 100, value: xcto, desc: 'MIME-sniffing protection is active.' };
@@ -98,7 +111,8 @@ function gradeSecurityHeaders(headers, isHttps) {
       'Missing Referrer-Policy Header',
       'low',
       'The Referrer-Policy header is absent. Browsers will use default behaviors, which could leak sensitive URL query parameters to third-party assets/links.',
-      'Add a Referrer-Policy header with a secure value like "no-referrer-when-downgrade" or "strict-origin-when-cross-origin".'
+      'Add a Referrer-Policy header with a secure value like "no-referrer-when-downgrade" or "strict-origin-when-cross-origin".',
+      null
     );
   } else if (/unsafe-url/i.test(refPolicy)) {
     reports['Referrer-Policy'] = { status: 'weak', score: 50, value: refPolicy, desc: 'Referrer-Policy is configured but set to "unsafe-url", leaking full referrer paths to anyone.' };
@@ -107,7 +121,8 @@ function gradeSecurityHeaders(headers, isHttps) {
       'Unsafe Referrer-Policy Header Configured',
       'low',
       'The Referrer-Policy header is set to "unsafe-url", leaking full path metadata to all third-party requests.',
-      'Update the Referrer-Policy header to a safer value.'
+      'Update the Referrer-Policy header to a safer value.',
+      refPolicy
     );
   } else {
     reports['Referrer-Policy'] = { status: 'secure', score: 100, value: refPolicy, desc: 'Referrer Policy configuration is safe.' };
@@ -122,7 +137,8 @@ function gradeSecurityHeaders(headers, isHttps) {
       'Missing Permissions-Policy Header',
       'low',
       'The Permissions-Policy header is missing. Browsers default to allowing pages access to sensitive device APIs (camera, geolocation, microphone, etc.).',
-      'Add a Permissions-Policy header to specify which browser features are restricted or permitted.'
+      'Add a Permissions-Policy header to specify which browser features are restricted or permitted.',
+      null
     );
   } else {
     reports['Permissions-Policy'] = { status: 'secure', score: 100, value: permPolicy, desc: 'Permissions Policy is active.' };
@@ -138,7 +154,8 @@ function gradeSecurityHeaders(headers, isHttps) {
         'Missing Strict-Transport-Security (HSTS) Header',
         'medium',
         'The HSTS header is missing on this HTTPS website. Browsers can still make unencrypted connections before redirecting, leaving users open to SSL strip attacks.',
-        'Configure the Strict-Transport-Security header (e.g. max-age=63072000; includeSubDomains; preload).'
+        'Configure the Strict-Transport-Security header (e.g. max-age=63072000; includeSubDomains; preload).',
+        null
       );
     } else {
       const hasSubdomains = /includesubdomains/i.test(hsts);
@@ -259,7 +276,7 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
   const apiDiscoveryData = await discoverApiEndpoints(crawlerResult.html || '', crawlerResult.url, authOptions);
 
   // 3b. Security Headers Grader (A+ to F Rating)
-  const headersGrade = gradeSecurityHeaders(crawlerResult.headers || {}, isHttps);
+  const headersGrade = gradeSecurityHeaders(crawlerResult.headers || {}, isHttps, crawlerResult.url);
 
   // Auditing technology versions for known static CVEs
   const staticCveFindings = auditOutdatedLibraries(crawlerResult.html || '');
@@ -309,7 +326,10 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
       category: 'Headers',
       description: 'Access-Control-Allow-Origin header is set to wildcard (*), allowing any website to read response headers and data.',
       remediation: 'Set Access-Control-Allow-Origin to specific trusted domains or remove it.',
-      owasp: 'A05:2021 Security Misconfiguration'
+      owasp: 'A05:2021 Security Misconfiguration',
+      affectedUrl: crawlerResult.url,
+      proof: 'Access-Control-Allow-Origin: *',
+      confidence: 'confirmed'
     });
   }
 
@@ -332,7 +352,10 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
       category: 'Scripts',
       description: `HTTPS page loads insecure HTTP resources: ${mixedContent.slice(0, 3).join(', ')}`,
       remediation: 'Serve all referenced assets (images, stylesheets, scripts) over secure HTTPS connections.',
-      owasp: 'A05:2021 Security Misconfiguration'
+      owasp: 'A05:2021 Security Misconfiguration',
+      affectedUrl: crawlerResult.url,
+      proof: mixedContent.slice(0, 3).join(', '),
+      confidence: 'confirmed'
     });
   }
 
@@ -356,7 +379,10 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
       category: 'Scripts',
       description: `External stylesheets or scripts are loaded without an integrity hash: ${sriIssues.slice(0, 2).join(', ')}. If the CDN hosting these files is compromised, malicious code could run on your domain.`,
       remediation: 'Generate cryptographic integrity hashes (SHA-256/384/512) for all external assets and add the `integrity` attribute to your HTML tags.',
-      owasp: 'A06:2021-Vulnerable and Outdated Components'
+      owasp: 'A06:2021-Vulnerable and Outdated Components',
+      affectedUrl: crawlerResult.url,
+      proof: sriIssues.slice(0, 2).join(', '),
+      confidence: 'confirmed'
     });
   }
 
@@ -379,7 +405,10 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
       category: 'Forms',
       description: `Form data is submitted to an insecure HTTP URL: ${insecureFormActions.slice(0, 2).join(', ')}. This transmits input details and passwords in cleartext over the network.`,
       remediation: 'Update all form action targets to secure HTTPS endpoints.',
-      owasp: 'A05:2021 Security Misconfiguration'
+      owasp: 'A05:2021 Security Misconfiguration',
+      affectedUrl: crawlerResult.url,
+      proof: insecureFormActions.slice(0, 2).join(', '),
+      confidence: 'confirmed'
     });
   }
 
@@ -394,7 +423,10 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
         category: 'Headers',
         description: `The response header leaks server technology information: '${h}: ${normHeaders[h]}'. Attackers can use version information to identify matching CVE vulnerabilities.`,
         remediation: 'Disable version header outputs in your web server configurations (e.g. expose_php = Off in php.ini, or app.disable("x-powered-by") in Express).',
-        owasp: 'A05:2021 Security Misconfiguration'
+        owasp: 'A05:2021 Security Misconfiguration',
+        affectedUrl: crawlerResult.url,
+        proof: `${h}: ${normHeaders[h]}`,
+        confidence: 'confirmed'
       });
     }
   }
@@ -441,7 +473,10 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
           category: 'Cookies',
           description: `The cookie '${name}' can be accessed by scripts, increasing session-hijacking vulnerability via XSS.`,
           remediation: `Configure the cookie '${name}' with the HttpOnly flag.`,
-          owasp: 'A05:2021 Security Misconfiguration'
+          owasp: 'A05:2021 Security Misconfiguration',
+          affectedUrl: crawlerResult.url,
+          proof: cookieStr.split(';')[0].trim(),
+          confidence: 'confirmed'
         });
       }
       if (!secure && isHttps) {
@@ -452,7 +487,10 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
           category: 'Cookies',
           description: `The cookie '${name}' is transmitted in cleartext on insecure HTTP requests.`,
           remediation: `Configure the cookie '${name}' with the Secure flag.`,
-          owasp: 'A05:2021 Security Misconfiguration'
+          owasp: 'A05:2021 Security Misconfiguration',
+          affectedUrl: crawlerResult.url,
+          proof: cookieStr.split(';')[0].trim(),
+          confidence: 'confirmed'
         });
       }
     }
@@ -736,4 +774,4 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
   };
 }
 
-module.exports = { analyzeSecurity };
+module.exports = { analyzeSecurity, gradeSecurityHeaders };

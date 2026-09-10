@@ -712,7 +712,24 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
                 }
               });
             }
-          }
+
+            // Audit security headers on each sub-page (Item 9: multi-page header analysis)
+            if (page.headers) {
+              const { gradeSecurityHeaders: gradeHeaders } = require('../services/securityAnalyzer');
+              if (typeof gradeHeaders === 'function') {
+                const pageIsHttps = page.url.startsWith('https://');
+                const subGrade = gradeHeaders(page.headers, pageIsHttps, page.url);
+                for (const subFinding of (subGrade.findings || [])) {
+                  // Use a page-scoped ID to avoid conflating with the landing-page finding
+                  const pageSlug = page.url.replace(/^https?:\/\//, '').replace(/[^a-z0-9]/gi, '-').slice(0, 40);
+                  const scopedId = `${subFinding.id}--${pageSlug}`;
+                  if (!securityResult.findings.some(f => f.id === subFinding.id || f.id === scopedId)) {
+                    securityResult.findings.push({ ...subFinding, id: scopedId });
+                  }
+                }
+              }
+            }
+          } // end for (const page of siteCrawl.pages)
 
           if (securityResult.mixedContent.length > 0 && !securityResult.findings.some(f => f.id === 'mixed-content')) {
             securityResult.findings.push({
@@ -917,6 +934,20 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
 
     console.log(`[scanRoutes] Persisting sync scan report. ID: ${scanId}`);
     await saveReport(scanId, finalReport, userId, teamId);
+
+    // Item 11: Trigger smart alerts on new critical/high findings (mirrors scanWorker.js)
+    if (userId) {
+      try {
+        const Monitor = require('../models/Monitor');
+        const { processScanAlerts } = require('../services/alertService');
+        const monitor = await Monitor.findOne({ userId, targetUrl: crawlerResult.url }).catch(() => null);
+        processScanAlerts(
+          { ...finalReport, userId, scanId, url: crawlerResult.url, domain: crawlerResult.url },
+          previousScan,
+          monitor
+        ).catch(aErr => console.warn('[scanRoutes] Alert dispatch failed silently:', aErr.message));
+      } catch (_) {}
+    }
 
     if (!userId) {
       res.json(maskReportForGuests(finalReport));

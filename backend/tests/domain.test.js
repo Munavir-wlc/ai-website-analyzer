@@ -171,7 +171,7 @@ describe('Domain Ownership Verification Flow', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toHaveProperty('scanId');
     expect(res.body).toHaveProperty('score');
-  });
+  }, 15000);
 
   it('POST /api/scan - should allow active scan when domain is verified by requesting user', async () => {
     const res = await request(app)

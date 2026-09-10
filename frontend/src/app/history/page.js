@@ -11,8 +11,11 @@ import { Button } from '../../components/ui/Button';
 import { 
   Shield, Eye, Calendar, ExternalLink, RefreshCw, AlertCircle, Search, 
   Globe, ChevronDown, ChevronUp, ArrowUpRight, CheckCircle2, TrendingUp, 
-  TrendingDown, History, ShieldAlert, Award, FolderOutput, Check
+  TrendingDown, Minus, History, ShieldAlert, Award, FolderOutput, Check
 } from 'lucide-react';
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
+} from 'recharts';
 
 export default function HistoryPage() {
   const { user, token, loading: authLoading } = useAuth();
@@ -24,6 +27,7 @@ export default function HistoryPage() {
   const [expandedProjects, setExpandedProjects] = useState({});
   const [openMoveMenuId, setOpenMoveMenuId] = useState(null);
   const [movingScanId, setMovingScanId] = useState(null);
+  const [trendDomain, setTrendDomain] = useState('all');
   const router = useRouter();
 
   useEffect(() => {
@@ -170,6 +174,31 @@ export default function HistoryPage() {
     return null; // Redirecting
   }
 
+  // ── Score Trend Data (Item 10) ────────────────────────────────────────────
+  const TREND_COLORS = ['#6366f1','#10b981','#f59e0b','#a855f7','#ec4899','#06b6d4','#f43f5e'];
+  const allDomains = Array.from(new Set(scans.map(s => {
+    try { return new URL(s.url).hostname; } catch { return s.url; }
+  })));
+  const domainColor = new Map(allDomains.map((d, i) => [d, TREND_COLORS[i % TREND_COLORS.length]]));
+
+  // Build chronological data points (one per scan, sorted oldest first)
+  const trendData = [...scans]
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .map(s => {
+      let hostname;
+      try { hostname = new URL(s.url).hostname; } catch { hostname = s.url; }
+      return {
+        domain: hostname,
+        date: new Date(s.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+        score: s.score ?? 0,
+        grade: s.grade || '—',
+        scanMode: s.scanMode || 'quick',
+        color: domainColor.get(hostname) || '#6366f1'
+      };
+    })
+    .filter(p => trendDomain === 'all' || p.domain === trendDomain);
+  // ─────────────────────────────────────────────────────────────────────────
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground font-sans transition-colors duration-300">
       <Navbar />
@@ -200,7 +229,112 @@ export default function HistoryPage() {
           </div>
         )}
 
-        {/* Search */}
+        {/* ── Score Trend Chart (Item 10) ─────────────────────────────────── */}
+        {scans.length > 0 && (
+          <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-xl dark:shadow-2xl mb-8 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                  Score Trend Over Time
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {trendDomain === 'all' ? `All ${scans.length} scans across ${allDomains.length} domain(s)` : `Score history for ${trendDomain}`}
+                </p>
+              </div>
+              {/* Domain filter pills */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setTrendDomain('all')}
+                  className={`text-[11px] font-bold px-2.5 py-1 rounded-full border transition-all ${
+                    trendDomain === 'all'
+                      ? 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/40'
+                      : 'bg-slate-100 dark:bg-slate-950 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-indigo-500/30'
+                  }`}
+                >
+                  All Domains
+                </button>
+                {allDomains.map(d => (
+                  <button
+                    key={d}
+                    onClick={() => setTrendDomain(d)}
+                    className={`text-[11px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 transition-all ${
+                      trendDomain === d
+                        ? 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/40'
+                        : 'bg-slate-100 dark:bg-slate-950 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-indigo-500/30'
+                    }`}
+                  >
+                    <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: domainColor.get(d) }} />
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="h-56 w-full">
+              {trendData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendData} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="date" stroke="#64748b" fontSize={10} tickLine={false} />
+                    <YAxis domain={[0, 100]} stroke="#64748b" fontSize={11} tickLine={false} />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const d = payload[0].payload;
+                          const delta = trendData.indexOf(d) > 0
+                            ? d.score - trendData[trendData.indexOf(d) - 1]?.score
+                            : null;
+                          return (
+                            <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl shadow-2xl text-xs space-y-1 min-w-[160px]">
+                              <div className="font-bold text-white flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }} />
+                                {d.domain}
+                              </div>
+                              <div className="text-slate-400 font-mono">{d.date}</div>
+                              <div className="text-indigo-400 font-bold font-mono">Score: {d.score}/100</div>
+                              <div className="text-slate-400">Grade: <span className="text-white font-bold">{d.grade}</span></div>
+                              <div className="text-slate-400 uppercase text-[10px]">Mode: {d.scanMode}</div>
+                              {delta !== null && (
+                                <div className={`flex items-center gap-1 font-bold ${
+                                  delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-rose-400' : 'text-slate-400'
+                                }`}>
+                                  {delta > 0 ? <TrendingUp className="h-3 w-3" /> : delta < 0 ? <TrendingDown className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
+                                  {delta > 0 ? '+' : ''}{delta} vs prev
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="score"
+                      stroke="#6366f1"
+                      strokeWidth={3}
+                      dot={({ cx, cy, payload }) => (
+                        <circle
+                          key={`dot-${payload.date}-${payload.domain}`}
+                          cx={cx} cy={cy} r={5}
+                          fill={payload.color}
+                          stroke="#ffffff" strokeWidth={2}
+                        />
+                      )}
+                      activeDot={{ r: 8, fill: '#6366f1', stroke: '#ffffff', strokeWidth: 2 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-xs text-slate-400">
+                  No scans for selected domain yet.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {/* ─────────────────────────────────────────────────────────────────── */}
+
         <div className="bg-white dark:bg-slate-900/40 border border-slate-205 dark:border-slate-800/80 rounded-2xl p-4 mb-8 flex items-center relative shadow-sm">
           <Search className="absolute left-7 h-5 w-5 text-slate-400" />
           <input

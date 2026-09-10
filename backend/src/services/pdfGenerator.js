@@ -16,9 +16,17 @@ async function generateReportPDF(reportData) {
       <div style="background: #1e293b; border-left: 4px solid ${f.severity === 'critical' ? '#ef4444' : f.severity === 'high' ? '#f97316' : f.severity === 'medium' ? '#f59e0b' : '#3b82f6'}; margin-bottom: 12px; padding: 12px 16px; border-radius: 6px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <h3 style="margin: 0; color: #f8fafc; font-size: 15px;">${f.title}</h3>
-          <span style="font-size: 11px; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.1); color: #cbd5e1; font-weight: bold;">${f.severity}</span>
+          <div style="display:flex;gap:6px;align-items:center;">
+            ${f.confidence ? `<span style="font-size:10px;text-transform:uppercase;padding:2px 6px;border-radius:4px;background:${f.confidence === 'confirmed' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'};color:${f.confidence === 'confirmed' ? '#f87171' : '#fbbf24'};font-weight:bold;">${f.confidence}</span>` : ''}
+            <span style="font-size: 11px; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.1); color: #cbd5e1; font-weight: bold;">${f.severity}</span>
+          </div>
         </div>
         <p style="margin: 6px 0; color: #94a3b8; font-size: 13px;">${f.description || ''}</p>
+        ${(f.affectedUrl || f.proof) ? `
+          <div style="margin-top:8px;background:#0f172a;border-radius:6px;padding:8px 12px;font-family:monospace;font-size:11px;">
+            ${f.affectedUrl ? `<div style="color:#67e8f9;"><span style="color:#64748b;">URL &nbsp;&nbsp;</span>${f.affectedUrl}</div>` : ''}
+            ${f.proof ? `<div style="color:#fcd34d;margin-top:4px;"><span style="color:#64748b;">Proof&nbsp;</span>${f.proof}</div>` : ''}
+          </div>` : ''}
         ${f.remediation ? `<div style="margin-top: 6px; font-size: 12px; color: #38bdf8;"><strong>Remediation:</strong> ${f.remediation}</div>` : ''}
       </div>
     `).join('');
@@ -49,6 +57,12 @@ async function generateReportPDF(reportData) {
           <div style="text-align: right;" class="meta">
             <div>Date: ${new Date(reportData.scanDate || Date.now()).toLocaleDateString()}</div>
             <div>Mode: ${reportData.scanMode || 'Full'}</div>
+            <div style="margin-top:4px;">
+              ${reportData.aiEnabled
+                ? '<span style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);border-radius:999px;font-size:10px;font-weight:bold;padding:2px 8px;">&#9733; AI-Assisted</span>'
+                : '<span style="background:rgba(100,116,139,0.2);color:#94a3b8;border:1px solid #334155;border-radius:999px;font-size:10px;font-weight:bold;padding:2px 8px;">Static Only</span>'
+              }
+            </div>
           </div>
         </div>
 

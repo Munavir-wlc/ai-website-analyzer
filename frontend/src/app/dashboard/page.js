@@ -7,7 +7,8 @@ import Navbar from '../../components/Navbar';
 import Link from 'next/link';
 import { 
   BarChart3, Shield, ShieldAlert, CheckCircle, AlertTriangle, 
-  TrendingUp, Globe, Clock, ArrowUpRight, Loader2, Sparkles, Plus, ExternalLink, Filter
+  TrendingUp, Globe, Clock, ArrowUpRight, Loader2, Sparkles, Plus, ExternalLink, Filter,
+  Zap, CreditCard
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Legend } from 'recharts';
 
@@ -24,6 +25,7 @@ export default function DashboardPage() {
   const [error, setError] = useState(null);
   const [selectedDomain, setSelectedDomain] = useState('all');
   const [selectedScanMode, setSelectedScanMode] = useState('all');
+  const [subscription, setSubscription] = useState(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -33,6 +35,7 @@ export default function DashboardPage() {
 
     if (user) {
       fetchAnalytics(activeWorkspace?.id || 'personal');
+      fetchSubscription();
     }
   }, [user, authLoading, activeWorkspace]);
 
@@ -56,6 +59,23 @@ export default function DashboardPage() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchSubscription = async () => {
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+      const token = localStorage.getItem('vapt_auth_token');
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/payment/subscription`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSubscription(data);
+      }
+    } catch (err) {
+      console.warn('Subscription fetch failed:', err.message);
     }
   };
 
@@ -207,6 +227,74 @@ export default function DashboardPage() {
               <span className="text-xs text-slate-500 ml-2">scanned website domains</span>
             </div>
           </div>
+
+          {/* Usage Quota Card (Item 12) */}
+          {(() => {
+            const plan = subscription?.plan || 'free';
+            const used = subscription?.scansCountThisMonth ?? 0;
+            const limit = subscription?.scansLimit;
+            const isUnlimited = limit === 'unlimited';
+            const pct = isUnlimited ? 0 : Math.min(100, Math.round((used / (limit || 3)) * 100));
+            const resetDate = subscription?.quotaResetDate
+              ? new Date(subscription.quotaResetDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+              : null;
+            const barColor = pct >= 90 ? 'bg-rose-500' : pct >= 60 ? 'bg-amber-500' : 'bg-emerald-500';
+            const textColor = pct >= 90 ? 'text-rose-600 dark:text-rose-400' : pct >= 60 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400';
+            return (
+              <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl flex flex-col justify-between space-y-3 shadow-md">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Monthly Quota</span>
+                  <div className="p-2 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-xl border border-cyan-500/20">
+                    <Zap className="h-4 w-4" />
+                  </div>
+                </div>
+
+                {subscription ? (
+                  <>
+                    <div className="flex items-baseline gap-2">
+                      <span className={`text-3xl font-black ${isUnlimited ? 'text-emerald-600 dark:text-emerald-400' : textColor}`}>
+                        {isUnlimited ? '∞' : used}
+                      </span>
+                      {!isUnlimited && (
+                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                          / {limit} scans
+                        </span>
+                      )}
+                    </div>
+
+                    {!isUnlimited && (
+                      <div className="space-y-1">
+                        <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-slate-400">
+                          <span className="capitalize font-semibold">Plan: {plan}</span>
+                          {resetDate && <span>Resets {resetDate}</span>}
+                        </div>
+                        {pct >= 80 && (
+                          <Link
+                            href="/pricing"
+                            className="mt-1 flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                          >
+                            <CreditCard className="h-3 w-3" /> Upgrade for unlimited scans
+                          </Link>
+                        )}
+                      </div>
+                    )}
+
+                    {isUnlimited && (
+                      <span className="text-xs text-slate-500 capitalize">Plan: {plan} • Unlimited</span>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-xs text-slate-400 italic">Loading quota...</span>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Critical Risk Card */}
           <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl flex flex-col justify-between space-y-3 shadow-md">

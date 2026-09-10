@@ -227,12 +227,19 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
 
   const handleExportCSV = () => {
     const findings = result.findings || [];
-    const headers = ['Category', 'Severity', 'Title', 'Description', 'Remediation', 'OWASP Reference'];
+    const headers = [
+      'Category', 'Severity', 'Confidence', 'Title',
+      'Description', 'Affected URL', 'Evidence / Proof',
+      'Remediation', 'OWASP Reference'
+    ];
     const rows = findings.map(f => [
       f.category || 'General',
       f.severity || 'info',
+      f.confidence || 'informational',
       f.title || '',
       (f.description || '').replace(/"/g, '""'),
+      f.affectedUrl || (result.scannedUrl || result.url || ''),
+      (f.proof || '').replace(/"/g, '""'),
       (f.remediation || '').replace(/"/g, '""'),
       f.owasp || ''
     ]);
@@ -696,16 +703,23 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
         <div className="absolute top-0 right-0 -mr-12 -mt-12 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-              <Sparkles className="w-4 h-4 text-indigo-400" />
+            <div className={`p-1.5 rounded-xl border ${result.aiEnabled ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
+              <Sparkles className={`w-4 h-4 ${result.aiEnabled ? 'text-indigo-400 animate-pulse' : 'text-slate-400'}`} />
             </div>
             <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-indigo-300">
               Executive Summary
             </h3>
           </div>
-          <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-            AI Threat & Performance Intelligence
-          </span>
+          {result.aiEnabled ? (
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3 text-indigo-400 animate-pulse" />
+              AI-Assisted Analysis
+            </span>
+          ) : (
+            <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+              Static Analysis Only
+            </span>
+          )}
         </div>
 
         {executiveSummary || result.executiveSummary ? (
@@ -1712,6 +1726,37 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
                                   {issue.description}
                                 </p>
 
+                                {/* Evidence block — affectedUrl, proof, confidence (Item 8) */}
+                                {(issue.affectedUrl || issue.proof || issue.confidence) && (
+                                  <div className="mt-2 rounded-xl border border-slate-700/60 bg-slate-950/70 overflow-hidden">
+                                    <div className="px-3 py-1.5 border-b border-slate-800/80 flex items-center justify-between">
+                                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Evidence</span>
+                                      {issue.confidence && (
+                                        <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                                          issue.confidence === 'confirmed' ? 'bg-rose-500/10 text-rose-400 border-rose-500/25'
+                                          : issue.confidence === 'likely' ? 'bg-amber-500/10 text-amber-400 border-amber-500/25'
+                                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                                        }`}>
+                                          {issue.confidence}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="p-3 space-y-1.5 font-mono text-[11px]">
+                                      {issue.affectedUrl && (
+                                        <div className="flex items-start gap-2">
+                                          <span className="text-slate-500 shrink-0 pt-0.5">URL</span>
+                                          <span className="text-cyan-400 break-all">{issue.affectedUrl}</span>
+                                        </div>
+                                      )}
+                                      {issue.proof && (
+                                        <div className="flex items-start gap-2">
+                                          <span className="text-slate-500 shrink-0 pt-0.5">Proof</span>
+                                          <span className="text-amber-300 break-all">{issue.proof}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                                 {issue.remediation && (
                                   <div className={`rounded-xl p-3.5 sm:p-4 border-l-4 text-xs sm:text-sm mt-2 font-medium ${
                                     isFixed 
