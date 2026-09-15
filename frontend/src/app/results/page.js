@@ -32,6 +32,10 @@ export default function ResultsPage() {
   const [openMoveMenu, setOpenMoveMenu] = useState(false);
   const [moving, setMoving] = useState(false);
   const [result, setResult] = useState(null);
+  const [hasChecked, setHasChecked] = useState(false);
+  const [screenshots, setScreenshots] = useState({ loading: false, desktop: null, mobile: null, error: null });
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [showClaimedSuccess, setShowClaimedSuccess] = useState(false);
   const [stepStates, setStepStates] = useState({
     crawling: 'in_progress',
     ssl_check: 'pending',
