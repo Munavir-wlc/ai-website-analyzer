@@ -10,8 +10,28 @@ module.exports = {
     extend: {
       fontFamily: {
         sans: ['var(--font-inter)', 'Inter', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-mono)', 'JetBrains Mono', 'IBM Plex Mono', 'monospace'],
       },
       colors: {
+        ink: '#14181F',
+        paper: '#F7F8FA',
+        signal: {
+          DEFAULT: '#2E5FE8',
+          hover: '#244ec4',
+          foreground: '#FFFFFF',
+        },
+        caution: {
+          DEFAULT: '#B45309',
+          foreground: '#FFFFFF',
+        },
+        critical: {
+          DEFAULT: '#B91C1C',
+          foreground: '#FFFFFF',
+        },
+        ok: {
+          DEFAULT: '#15803D',
+          foreground: '#FFFFFF',
+        },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
@@ -22,8 +42,9 @@ module.exports = {
           foreground: 'hsl(var(--card-foreground))',
         },
         primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
+          DEFAULT: '#2E5FE8',
+          hover: '#244ec4',
+          foreground: '#FFFFFF',
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',
@@ -39,9 +60,10 @@ module.exports = {
         },
       },
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
+        DEFAULT: '8px',
+        lg: '8px',
+        md: '8px',
+        sm: '6px',
       },
       boxShadow: {
         'soft': '0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04)',

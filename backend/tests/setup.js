@@ -10,6 +10,9 @@ if (!globalThis.crypto) {
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret_key_1234567890';
 process.env.MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/test_placeholder';
+// Route-level tests can verify that a scan is queued without starting a real
+// background scan against the network after the test has completed.
+process.env.SCAN_QUEUE_DISABLED = 'true';
 
 jest.setTimeout(60000);
 
@@ -34,6 +37,10 @@ beforeAll(async () => {
 }, 60000);
 
 afterAll(async () => {
+  const { closeScanQueue } = require('../src/services/scanQueue');
+  const { closeScanWorker } = require('../src/services/scanWorker');
+  await Promise.all([closeScanWorker(), closeScanQueue()]);
+
   if (mongoose.connection.readyState !== 0) {
     await mongoose.disconnect();
   }

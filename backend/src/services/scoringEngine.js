@@ -106,7 +106,9 @@ function calculateScores({ securityResult, performanceResult, seoResult, accessi
   let securityScore = securityResult.score ?? 100;
   
   // 2. Resolve performance score
-  let performanceScore = performanceResult.performanceScore ?? 100;
+  const performanceScore = Number.isFinite(performanceResult.performanceScore)
+    ? performanceResult.performanceScore
+    : null;
   
   // 3. Resolve accessibility score
   let accessibilityScore = accessibilityResult.accessibilityScore ?? 100;
@@ -123,14 +125,18 @@ function calculateScores({ securityResult, performanceResult, seoResult, accessi
 
   // 7. Calculate overall weighted score
   // Overall = (Security * 0.25) + (Performance * 0.20) + (SEO * 0.20) + (Accessibility * 0.15) + (Content * 0.10) + (GEO * 0.10)
-  const overallScore = Math.max(0, Math.round(
-    (securityScore * 0.25) +
-    (performanceScore * 0.20) +
-    (seoScore * 0.20) +
-    (accessibilityScore * 0.15) +
-    (contentScore * 0.10) +
-    (aiSearchScore * 0.10)
-  ));
+  const weightedScores = [
+    [securityScore, 0.25],
+    [performanceScore, 0.20],
+    [seoScore, 0.20],
+    [accessibilityScore, 0.15],
+    [contentScore, 0.10],
+    [aiSearchScore, 0.10]
+  ].filter(([value]) => Number.isFinite(value));
+  const weightTotal = weightedScores.reduce((total, [, weight]) => total + weight, 0);
+  const overallScore = weightTotal === 0
+    ? 0
+    : Math.max(0, Math.round(weightedScores.reduce((total, [value, weight]) => total + (value * weight), 0) / weightTotal));
 
   return {
     overall: overallScore,
@@ -140,7 +146,7 @@ function calculateScores({ securityResult, performanceResult, seoResult, accessi
     securityGrade: scoreToLetterGrade(securityScore),
     
     performance: performanceScore,
-    performanceGrade: scoreToLetterGrade(performanceScore),
+    performanceGrade: performanceScore === null ? 'Not measured' : scoreToLetterGrade(performanceScore),
     
     seo: seoScore,
     seoGrade: scoreToLetterGrade(seoScore),

@@ -1,20 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useAuth } from '../../lib/AuthContext';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
-import Navbar from '../../components/Navbar';
 import Link from 'next/link';
+import AppShell from '@/components/AppShell';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { StatCard } from '@/components/ui/StatCard';
+import { SkeletonCard, SkeletonTable } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Button } from '@/components/ui/Button';
 import { 
-  BarChart3, Shield, ShieldAlert, CheckCircle, AlertTriangle, 
-  TrendingUp, Globe, Clock, ArrowUpRight, Loader2, Sparkles, Plus, ExternalLink, Filter,
-  Zap, CreditCard
+  BarChart3, Shield, ShieldAlert, Globe, ArrowUpRight, Plus, Filter,
+  Zap, CreditCard, RefreshCw, AlertTriangle, TrendingUp, Clock
 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
+import { useWorkspace } from '@/lib/WorkspaceContext';
 
-import { useWorkspace } from '../../lib/WorkspaceContext';
-
-const DOMAIN_COLORS = ['#6366f1', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#06b6d4', '#f43f5e'];
+const DOMAIN_COLORS = ['#2E5FE8', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899', '#06B6D4', '#EF4444'];
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
@@ -27,19 +30,7 @@ export default function DashboardPage() {
   const [selectedScanMode, setSelectedScanMode] = useState('all');
   const [subscription, setSubscription] = useState(null);
 
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/login');
-      return;
-    }
-
-    if (user) {
-      fetchAnalytics(activeWorkspace?.id || 'personal');
-      fetchSubscription();
-    }
-  }, [user, authLoading, activeWorkspace]);
-
-  const fetchAnalytics = async (wsId = 'personal') => {
+  const fetchAnalytics = useCallback(async (wsId = 'personal') => {
     try {
       setLoading(true);
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -60,9 +51,9 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchSubscription = async () => {
+  const fetchSubscription = useCallback(async () => {
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
       const token = localStorage.getItem('vapt_auth_token');
@@ -77,31 +68,62 @@ export default function DashboardPage() {
     } catch (err) {
       console.warn('Subscription fetch failed:', err.message);
     }
+  }, []);
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+      return;
+    }
+    if (user) {
+      fetchAnalytics(activeWorkspace?.id || 'personal');
+      fetchSubscription();
+    }
+  }, [user, authLoading, activeWorkspace?.id, router, fetchAnalytics, fetchSubscription]);
+
+  const getScoreGrade = (score) => {
+    const s = Number(score) || 0;
+    if (s >= 90) return 'A+';
+    if (s >= 80) return 'A';
+    if (s >= 70) return 'B';
+    if (s >= 60) return 'C';
+    if (s >= 50) return 'D';
+    return 'F';
   };
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans flex flex-col transition-colors duration-300">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center space-y-4">
-          <Loader2 className="h-10 w-10 text-indigo-500 animate-spin" />
-          <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Loading Security Portfolio Analytics...</p>
+      <AppShell>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="space-y-2">
+              <div className="h-8 w-48 bg-muted rounded-lg animate-pulse" />
+              <div className="h-4 w-72 bg-muted rounded animate-pulse" />
+            </div>
+            <div className="h-10 w-32 bg-muted rounded-lg animate-pulse" />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+
+          <SkeletonTable rows={4} cols={3} />
         </div>
-      </div>
+      </AppShell>
     );
   }
 
   const { totalScans, avgScore, scoreHistory, riskBreakdown, statusBreakdown, assets } = analytics || {};
 
-  // Unique domains for filter dropdown and color map
   const availableDomains = assets ? Array.from(new Set(assets.map(a => a.domain))) : [];
-  
   const domainColorMap = new Map();
   availableDomains.forEach((d, idx) => {
     domainColorMap.set(d, DOMAIN_COLORS[idx % DOMAIN_COLORS.length]);
   });
 
-  // Filtered score history based on selected domain and scan mode
   const filteredScoreHistory = (selectedDomain === 'all'
     ? (scoreHistory || [])
     : (scoreHistory || []).filter(s => s.domain === selectedDomain))
@@ -114,290 +136,206 @@ export default function DashboardPage() {
     })
     .map(item => ({
       ...item,
-      color: domainColorMap.get(item.domain) || '#6366f1'
+      color: domainColorMap.get(item.domain) || '#2E5FE8'
     }));
 
-  // Filtered stats for selected domain if single site selected
   const displayScore = selectedDomain === 'all'
-    ? avgScore
-    : (assets?.find(a => a.domain === selectedDomain)?.latestScore || avgScore);
-
-  const getScoreColor = (score) => {
-    if (score >= 80) return 'text-emerald-600 dark:text-emerald-400';
-    if (score >= 60) return 'text-indigo-600 dark:text-indigo-400';
-    if (score >= 40) return 'text-amber-600 dark:text-amber-400';
-    return 'text-rose-600 dark:text-rose-400';
-  };
-
-  const getScoreGrade = (score) => {
-    if (score >= 90) return 'A+';
-    if (score >= 80) return 'A';
-    if (score >= 70) return 'B';
-    if (score >= 60) return 'C';
-    if (score >= 50) return 'D';
-    return 'F';
-  };
+    ? (avgScore || 0)
+    : (assets?.find(a => a.domain === selectedDomain)?.latestScore || avgScore || 0);
 
   const riskBarData = [
-    { name: 'Critical', count: riskBreakdown?.critical || 0, color: '#f43f5e' },
-    { name: 'High', count: riskBreakdown?.high || 0, color: '#fb923c' },
-    { name: 'Medium', count: riskBreakdown?.medium || 0, color: '#facc15' },
-    { name: 'Low', count: riskBreakdown?.low || 0, color: '#38bdf8' }
+    { name: 'Critical', count: riskBreakdown?.critical || 0, color: '#EF4444' },
+    { name: 'High', count: riskBreakdown?.high || 0, color: '#F97316' },
+    { name: 'Medium', count: riskBreakdown?.medium || 0, color: '#F59E0B' },
+    { name: 'Low', count: riskBreakdown?.low || 0, color: '#3B82F6' }
   ];
 
+  const totalOpenFindings = (riskBreakdown?.critical || 0) + (riskBreakdown?.high || 0) + (riskBreakdown?.medium || 0) + (riskBreakdown?.low || 0);
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans flex flex-col transition-colors duration-300 selection:bg-indigo-500 selection:text-white">
-      <Navbar />
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <AppShell>
+      <div className="space-y-8">
         
-        {/* Header Banner */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl relative overflow-hidden shadow-xl dark:shadow-2xl">
-          <div className="absolute -inset-px bg-gradient-to-r from-indigo-500/10 via-purple-500/5 to-transparent rounded-3xl pointer-events-none" />
-          <div className="relative z-10 space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 font-mono tracking-wider">
-                Portfolio Command Center • {activeWorkspace?.name || 'Personal Workspace'}
-              </span>
+        {/* Page Header */}
+        <PageHeader
+          title="Security Overview"
+          description={`Comprehensive health analytics, vulnerability tracking, and compliance metrics for ${activeWorkspace?.name || 'Personal Workspace'}.`}
+          badge={
+            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 font-mono">
+              Live SOC Console
+            </span>
+          }
+          actions={
+            <div className="flex items-center gap-2.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchAnalytics(activeWorkspace?.id || 'personal')}
+                className="gap-1.5 text-xs"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh
+              </Button>
+              <Link href="/">
+                <Button size="sm" className="gap-1.5 text-xs shadow-sm">
+                  <Plus className="h-3.5 w-3.5" />
+                  New Scan
+                </Button>
+              </Link>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-              Welcome back, {user?.name || 'Security Admin'}
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-              Overview of target website health, domain score trends, and vulnerability resolution metrics.
-            </p>
-          </div>
-          <div className="relative z-10 flex items-center gap-3 shrink-0">
-            <Link
-              href="/"
-              className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-2.5 px-5 rounded-xl text-xs shadow-lg shadow-indigo-500/20 transition-all hover:scale-[1.02]"
-            >
-              <Plus className="h-4 w-4" /> New Audit Scan
-            </Link>
-          </div>
-        </div>
+          }
+        />
 
-        {/* Top Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Executive KPI Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           
-          {/* Health Score Card */}
-          <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl flex flex-col justify-between space-y-3 shadow-md">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                {selectedDomain === 'all' ? 'Average Health Score' : 'Domain Health Score'}
-              </span>
-              <div className="p-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-500/20">
-                <BarChart3 className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="flex items-baseline justify-between">
-              <span className={`text-3xl font-black ${getScoreColor(displayScore)}`}>
-                {displayScore} <span className="text-xs font-normal text-slate-400 dark:text-slate-500">/ 100</span>
-              </span>
-              <span className="text-xs font-extrabold px-2 py-0.5 rounded bg-slate-150 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono">
+          {/* Security Score */}
+          <StatCard
+            title="Security Score"
+            value={`${displayScore} / 100`}
+            subtitle={`Grade ${getScoreGrade(displayScore)}`}
+            icon={BarChart3}
+            badge={
+              <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
                 Grade {getScoreGrade(displayScore)}
               </span>
-            </div>
-          </div>
+            }
+          />
 
-          {/* Total Audits Card */}
-          <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl flex flex-col justify-between space-y-3 shadow-md">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Scans Run</span>
-              <div className="p-2 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-xl border border-purple-500/20">
-                <Shield className="h-4 w-4" />
-              </div>
-            </div>
-            <div>
-              <span className="text-3xl font-black text-slate-900 dark:text-white">{totalScans}</span>
-              <span className="text-xs text-slate-500 ml-2">completed audits</span>
-            </div>
-          </div>
+          {/* Monitored Domains */}
+          <StatCard
+            title="Monitored Domains"
+            value={assets?.length || 0}
+            subtitle="Target Web Assets"
+            icon={Globe}
+          />
 
-          {/* Monitored Assets Card */}
-          <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl flex flex-col justify-between space-y-3 shadow-md">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Target Domains</span>
-              <div className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-500/20">
-                <Globe className="h-4 w-4" />
-              </div>
-            </div>
-            <div>
-              <span className="text-3xl font-black text-slate-900 dark:text-white">{assets?.length || 0}</span>
-              <span className="text-xs text-slate-500 ml-2">scanned website domains</span>
-            </div>
-          </div>
+          {/* Open Findings */}
+          <StatCard
+            title="Open Findings"
+            value={totalOpenFindings}
+            subtitle={`${statusBreakdown?.resolved || 0} Resolved`}
+            icon={Shield}
+          />
 
-          {/* Usage Quota Card (Item 12) */}
+          {/* Critical Risks */}
+          <StatCard
+            title="Critical Risks"
+            value={riskBreakdown?.critical || 0}
+            subtitle={`${riskBreakdown?.high || 0} High Severity`}
+            icon={ShieldAlert}
+            className={riskBreakdown?.critical > 0 ? 'border-rose-500/30' : undefined}
+          />
+
+          {/* Monthly Quota */}
           {(() => {
             const plan = subscription?.plan || 'free';
-            const used = subscription?.scansCountThisMonth ?? 0;
+            const used = subscription?.scansCountThisMonth ?? totalScans ?? 0;
             const limit = subscription?.scansLimit;
             const isUnlimited = limit === 'unlimited';
             const pct = isUnlimited ? 0 : Math.min(100, Math.round((used / (limit || 3)) * 100));
-            const resetDate = subscription?.quotaResetDate
-              ? new Date(subscription.quotaResetDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-              : null;
-            const barColor = pct >= 90 ? 'bg-rose-500' : pct >= 60 ? 'bg-amber-500' : 'bg-emerald-500';
-            const textColor = pct >= 90 ? 'text-rose-600 dark:text-rose-400' : pct >= 60 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400';
+
             return (
-              <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl flex flex-col justify-between space-y-3 shadow-md">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Monthly Quota</span>
-                  <div className="p-2 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-xl border border-cyan-500/20">
-                    <Zap className="h-4 w-4" />
-                  </div>
-                </div>
-
-                {subscription ? (
-                  <>
-                    <div className="flex items-baseline gap-2">
-                      <span className={`text-3xl font-black ${isUnlimited ? 'text-emerald-600 dark:text-emerald-400' : textColor}`}>
-                        {isUnlimited ? '∞' : used}
-                      </span>
-                      {!isUnlimited && (
-                        <span className="text-xs text-slate-500 dark:text-slate-400">
-                          / {limit} scans
-                        </span>
-                      )}
-                    </div>
-
-                    {!isUnlimited && (
-                      <div className="space-y-1">
-                        <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between text-[10px] text-slate-400">
-                          <span className="capitalize font-semibold">Plan: {plan}</span>
-                          {resetDate && <span>Resets {resetDate}</span>}
-                        </div>
-                        {pct >= 80 && (
-                          <Link
-                            href="/pricing"
-                            className="mt-1 flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
-                          >
-                            <CreditCard className="h-3 w-3" /> Upgrade for unlimited scans
-                          </Link>
-                        )}
-                      </div>
-                    )}
-
-                    {isUnlimited && (
-                      <span className="text-xs text-slate-500 capitalize">Plan: {plan} • Unlimited</span>
-                    )}
-                  </>
-                ) : (
-                  <span className="text-xs text-slate-400 italic">Loading quota...</span>
-                )}
-              </div>
+              <StatCard
+                title="Scan Quota"
+                value={isUnlimited ? 'Unlimited' : `${used} / ${limit || 3}`}
+                subtitle={`Plan: ${plan.toUpperCase()}`}
+                icon={Zap}
+                badge={
+                  pct >= 80 && !isUnlimited ? (
+                    <Link href="/pricing" className="text-[10px] text-primary hover:underline font-semibold">
+                      Upgrade
+                    </Link>
+                  ) : null
+                }
+              />
             );
           })()}
 
-          {/* Critical Risk Card */}
-          <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl flex flex-col justify-between space-y-3 shadow-md">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Active Critical/High</span>
-              <div className="p-2 bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-xl border border-rose-500/20">
-                <ShieldAlert className="h-4 w-4" />
-              </div>
-            </div>
-            <div>
-              <span className="text-3xl font-black text-rose-600 dark:text-rose-400">
-                {(riskBreakdown?.critical || 0) + (riskBreakdown?.high || 0)}
-              </span>
-              <span className="text-xs text-slate-500 ml-2">findings requiring fix</span>
-            </div>
-          </div>
-
         </div>
 
-        {/* Charts Section: Score History (with Per-Website Lines) & Risk Breakdown */}
+        {/* Charts Section: Score History & Risk Distribution */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* Score Trend Line Chart with Per-Website Dots & Legend */}
-          <div className="lg:col-span-2 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl space-y-4 shadow-xl dark:shadow-2xl">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Score Trend Line Chart */}
+          <div className="lg:col-span-2 rounded-lg border border-border bg-card p-5 sm:p-6 space-y-4 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
               <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-indigo-600 dark:text-indigo-400" /> Website Audit Timeline ({filteredScoreHistory.length} Scans)
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-primary" />
+                  Security Score Timeline ({filteredScoreHistory.length} Scans)
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  {selectedDomain === 'all' ? 'Every scan point plotted chronologically across your target websites.' : `Score evolution for ${selectedDomain}`}
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {selectedDomain === 'all' ? 'Chronological trend across all target website audits.' : `Score evolution for ${selectedDomain}`}
                 </p>
               </div>
 
-              {/* Filter Dropdowns Container */}
-              <div className="flex items-center gap-3 shrink-0 flex-wrap">
-                {/* Per-Website Filter Dropdown */}
-                <div className="flex items-center gap-2">
-                  <Filter className="h-3.5 w-3.5 text-slate-400" />
+              {/* Filter Dropdowns */}
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <Filter className="h-3.5 w-3.5 text-muted-foreground" />
                   <select
                     value={selectedDomain}
                     onChange={(e) => setSelectedDomain(e.target.value)}
-                    className="bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+                    className="bg-background border border-border rounded-lg px-2.5 py-1 text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                   >
-                    <option value="all">🌐 All Websites ({availableDomains.length})</option>
+                    <option value="all">All Websites ({availableDomains.length})</option>
                     {availableDomains.map(d => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
                 </div>
 
-                {/* Scan Depth Filter Dropdown */}
-                <div className="flex items-center gap-2">
-                  <select
-                    value={selectedScanMode}
-                    onChange={(e) => setSelectedScanMode(e.target.value)}
-                    className="bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
-                  >
-                    <option value="all">📊 All Scan Depths</option>
-                    <option value="quick">Quick Passive Only</option>
-                    <option value="full">Full Deterministic Only</option>
-                    <option value="zap">Deep ZAP Scan Only</option>
-                  </select>
-                </div>
+                <select
+                  value={selectedScanMode}
+                  onChange={(e) => setSelectedScanMode(e.target.value)}
+                  className="bg-background border border-border rounded-lg px-2.5 py-1 text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                >
+                  <option value="all">All Depths</option>
+                  <option value="quick">Quick Passive</option>
+                  <option value="full">Full VAPT</option>
+                  <option value="zap">Deep ZAP</option>
+                </select>
               </div>
             </div>
 
-            {/* Color Legend Pills for Websites */}
+            {/* Website Pills Filter */}
             {availableDomains.length > 0 && selectedDomain === 'all' && (
-              <div className="flex flex-wrap gap-2 pt-1">
+              <div className="flex flex-wrap gap-1.5 pt-1">
                 {availableDomains.map(d => (
                   <button
                     key={d}
+                    type="button"
                     onClick={() => setSelectedDomain(d)}
-                    className="flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-indigo-500 transition-all"
+                    className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-lg bg-muted border border-border text-foreground hover:border-primary/50 transition-colors"
                   >
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: domainColorMap.get(d) }} />
+                    <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: domainColorMap.get(d) }} />
                     <span>{d}</span>
                   </button>
                 ))}
               </div>
             )}
 
-            <div className="h-64 w-full pt-2">
+            <div className="h-60 w-full pt-2">
               {filteredScoreHistory && filteredScoreHistory.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={filteredScoreHistory} margin={{ top: 10, right: 15, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="date" stroke="#64748b" fontSize={10} tickLine={false} />
-                    <YAxis domain={[0, 100]} stroke="#64748b" fontSize={11} tickLine={false} />
+                    <XAxis dataKey="date" stroke="#94A3B8" fontSize={10} tickLine={false} />
+                    <YAxis domain={[0, 100]} stroke="#94A3B8" fontSize={10} tickLine={false} />
                     <Tooltip
                       content={({ active, payload }) => {
                         if (active && payload && payload.length) {
                           const data = payload[0].payload;
                           return (
-                            <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl shadow-2xl text-xs space-y-1">
-                              <div className="font-bold text-white flex items-center gap-1.5">
+                            <div className="bg-card border border-border p-3 rounded-lg shadow-xl text-xs space-y-1">
+                              <div className="font-bold text-foreground flex items-center gap-1.5">
                                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: data.color }} />
                                 {data.domain}
                               </div>
-                              <div className="text-slate-400 font-mono text-[11px]">{data.date}</div>
-                              <div className="text-indigo-400 font-bold font-mono">Score: {data.score} / 100 (Grade {getScoreGrade(data.score)})</div>
+                              <div className="text-muted-foreground font-mono text-[11px]">{data.date}</div>
+                              <div className="text-primary font-bold font-mono">Score: {data.score} / 100 ({getScoreGrade(data.score)})</div>
                               {data.scanDepth && (
-                                <div className="text-slate-400 font-mono text-[10px] uppercase mt-0.5">Depth: {data.scanDepth}</div>
+                                <div className="text-muted-foreground font-mono text-[10px] uppercase">Depth: {data.scanDepth}</div>
                               )}
                             </div>
                           );
@@ -408,39 +346,39 @@ export default function DashboardPage() {
                     <Line
                       type="monotone"
                       dataKey="score"
-                      stroke="#6366f1"
-                      strokeWidth={3}
-                      dot={{ r: 6, fill: '#6366f1', strokeWidth: 2, stroke: '#ffffff' }}
-                      activeDot={{ r: 8, fill: '#6366f1', stroke: '#ffffff', strokeWidth: 2 }}
+                      stroke="#2E5FE8"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, fill: '#2E5FE8', strokeWidth: 2, stroke: '#ffffff' }}
+                      activeDot={{ r: 6, fill: '#2E5FE8', stroke: '#ffffff', strokeWidth: 2 }}
                     />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex items-center justify-center text-xs text-slate-400 dark:text-slate-500">
-                  No scan history available for selected website.
+                <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
+                  No scan points recorded for the active filter.
                 </div>
               )}
             </div>
           </div>
 
-          {/* Risk Breakdown Bar Chart */}
-          <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl space-y-4 shadow-xl dark:shadow-2xl flex flex-col justify-between">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500 dark:text-amber-400" /> Risk Distribution
+          {/* Risk Distribution Bar Chart */}
+          <div className="rounded-lg border border-border bg-card p-5 sm:p-6 space-y-4 shadow-sm flex flex-col justify-between">
+            <div className="border-b border-border pb-3">
+              <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500" /> Risk Distribution
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Categorization of findings by severity.</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Identified vulnerabilities by severity category.</p>
             </div>
 
             <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={riskBarData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <XAxis dataKey="name" stroke="#64748b" fontSize={11} tickLine={false} />
-                  <YAxis stroke="#64748b" fontSize={11} tickLine={false} allowDecimals={false} />
+                  <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} allowDecimals={false} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#090d16', borderColor: '#1e293b', borderRadius: '12px', fontSize: '12px', color: '#ffffff' }}
+                    contentStyle={{ backgroundColor: 'var(--card)', borderColor: 'var(--border)', borderRadius: '8px', fontSize: '12px' }}
                   />
-                  <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                     {riskBarData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
@@ -449,13 +387,13 @@ export default function DashboardPage() {
               </ResponsiveContainer>
             </div>
 
-            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 grid grid-cols-2 gap-2 text-xs">
-              <div className="flex items-center justify-between p-2 bg-slate-100 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800/80">
-                <span className="text-slate-500 dark:text-slate-400">Open Bugs</span>
+            <div className="pt-3 border-t border-border grid grid-cols-2 gap-2 text-xs">
+              <div className="p-2 bg-muted/40 rounded-lg border border-border flex items-center justify-between">
+                <span className="text-muted-foreground">Open Issues</span>
                 <span className="font-mono font-bold text-amber-600 dark:text-amber-400">{statusBreakdown?.open || 0}</span>
               </div>
-              <div className="flex items-center justify-between p-2 bg-slate-100 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800/80">
-                <span className="text-slate-500 dark:text-slate-400">Resolved</span>
+              <div className="p-2 bg-muted/40 rounded-lg border border-border flex items-center justify-between">
+                <span className="text-muted-foreground">Resolved</span>
                 <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{statusBreakdown?.resolved || 0}</span>
               </div>
             </div>
@@ -463,47 +401,47 @@ export default function DashboardPage() {
 
         </div>
 
-        {/* Target Asset Inventory Grid */}
-        <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl space-y-4 shadow-xl dark:shadow-2xl">
-          <div className="flex items-center justify-between">
+        {/* Target Asset Inventory */}
+        <div className="rounded-lg border border-border bg-card p-5 sm:p-6 space-y-4 shadow-sm">
+          <div className="flex items-center justify-between border-b border-border pb-3">
             <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Globe className="h-5 w-5 text-indigo-600 dark:text-indigo-400" /> Monitored Target Websites ({assets?.length || 0})
+              <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                <Globe className="h-4 w-4 text-primary" />
+                Target Website Inventory ({assets?.length || 0})
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Overview of registered domains and their latest audit status.</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Observed domains and their latest security status.</p>
             </div>
+            <Link href="/domains">
+              <Button variant="outline" size="sm" className="text-xs gap-1">
+                View All Domains <ArrowUpRight className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
           </div>
 
           {assets && assets.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-1">
               {assets.map((asset, idx) => (
                 <div
                   key={idx}
-                  className={`bg-slate-50 dark:bg-slate-950/60 border p-5 rounded-2xl space-y-4 transition-all hover:bg-white dark:hover:bg-slate-900/80 flex flex-col justify-between group shadow-sm ${
+                  className={`rounded-lg border p-4 space-y-3 transition-colors bg-card hover:border-primary/40 flex flex-col justify-between ${
                     selectedDomain === asset.domain
-                      ? 'border-indigo-500 ring-2 ring-indigo-500/20'
-                      : 'border-slate-200 dark:border-slate-800 hover:border-indigo-500/40'
+                      ? 'border-primary ring-1 ring-primary'
+                      : 'border-border'
                   }`}
                 >
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono font-bold text-sm text-slate-900 dark:text-white truncate" title={asset.domain}>
+                      <span className="font-mono font-bold text-sm text-foreground truncate" title={asset.domain}>
                         {asset.domain}
                       </span>
-                      <span className={`text-xs font-black px-2.5 py-0.5 rounded-full border ${
-                        asset.latestScore >= 80
-                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                          : asset.latestScore >= 60
-                            ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20'
-                            : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
-                      }`}>
-                        Grade {getScoreGrade(asset.latestScore)}
+                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                        Score {asset.latestScore} ({getScoreGrade(asset.latestScore)})
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
+                        <Clock className="h-3.5 w-3.5" />
                         {new Date(asset.lastScanDate).toLocaleDateString()}
                       </span>
                       <span>•</span>
@@ -511,31 +449,39 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800/80 flex items-center justify-between">
+                  <div className="pt-3 border-t border-border flex items-center justify-between text-xs">
                     <button
+                      type="button"
                       onClick={() => setSelectedDomain(asset.domain)}
-                      className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                      className="font-semibold text-primary hover:underline flex items-center gap-1"
                     >
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: domainColorMap.get(asset.domain) }} /> Filter Chart →
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: domainColorMap.get(asset.domain) }} /> Filter
                     </button>
                     <Link
                       href={`/results/${asset.lastScanId}`}
-                      className="text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-white flex items-center gap-1 transition-colors group-hover:translate-x-0.5 duration-200"
+                      className="font-medium text-foreground hover:text-primary flex items-center gap-1 transition-colors"
                     >
-                      View Audit <ArrowUpRight className="h-3.5 w-3.5" />
+                      Audit Report <ArrowUpRight className="h-3.5 w-3.5" />
                     </Link>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="p-8 text-center bg-slate-100 dark:bg-slate-950/40 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-500">
-              No target assets scanned yet. Start your first security audit from the home page!
-            </div>
+            <EmptyState
+              icon={Globe}
+              title="No website domains audited yet"
+              description="Launch your first automated security audit to populate health analytics and risk breakdown charts."
+              action={
+                <Link href="/">
+                  <Button size="sm">Start First Security Scan</Button>
+                </Link>
+              }
+            />
           )}
         </div>
 
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

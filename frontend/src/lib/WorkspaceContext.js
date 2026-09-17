@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 
 const WorkspaceContext = createContext();
@@ -17,17 +17,7 @@ export function WorkspaceProvider({ children }) {
   });
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
 
-  useEffect(() => {
-    if (user && token) {
-      fetchWorkspaces();
-    } else {
-      setWorkspaces([]);
-      setActiveWorkspace({ id: 'personal', name: 'Personal Workspace', type: 'personal' });
-      setLoadingWorkspaces(false);
-    }
-  }, [user, token]);
-
-  const fetchWorkspaces = async (newActiveId = null) => {
+  const fetchWorkspaces = useCallback(async (newActiveId = null) => {
     try {
       setLoadingWorkspaces(true);
       const res = await fetch(`${API_BASE}/api/team/my-teams`, {
@@ -67,7 +57,17 @@ export function WorkspaceProvider({ children }) {
     } finally {
       setLoadingWorkspaces(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    if (user && token) {
+      fetchWorkspaces();
+    } else {
+      setWorkspaces([]);
+      setActiveWorkspace({ id: 'personal', name: 'Personal Workspace', type: 'personal' });
+      setLoadingWorkspaces(false);
+    }
+  }, [user, token, fetchWorkspaces]);
 
   const switchWorkspace = (workspaceId) => {
     if (workspaceId === 'personal') {

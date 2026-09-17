@@ -17,12 +17,20 @@ function normalizeFinding(finding) {
       : 'deterministic');
 
   const confidence = finding.confidence
-    || (source === 'owasp-zap' || source === 'active-probe' ? 'medium' : 'high');
+    || (source === 'owasp-zap' || source === 'active-probe' || source === 'ai-analysis' ? 'medium' : 'high');
+  const advisoryCategories = ['seo', 'accessibility', 'performance', 'content', 'ai search', 'geo'];
+  const validationStatus = finding.validationStatus
+    || (source === 'owasp-zap' || source === 'active-probe' || source === 'ai-analysis'
+      ? 'needs_verification'
+      : advisoryCategories.some((name) => category.toLowerCase().includes(name))
+        ? 'recommendation'
+        : 'confirmed');
 
   return {
     ...finding,
     source,
-    confidence
+    confidence,
+    validationStatus
   };
 }
 
@@ -107,7 +115,13 @@ function generateReport({
       findingsCount: 0
     },
     // New expanded audit properties
-    performanceData: performanceResult || { opportunities: [], diagnostics: [], performanceScore: 100 },
+    performanceData: performanceResult || {
+      measured: false,
+      unavailableReason: 'Performance analysis did not run.',
+      opportunities: [],
+      diagnostics: [],
+      performanceScore: null
+    },
     accessibilityData: accessibilityResult || { findings: [], accessibilityScore: 100 },
     seoData: seoResult || { findings: [], seoScore: 100, details: {} },
     aiSearchData: aiSearchResult || { findings: [], aiSearchScore: 100, details: {} },
@@ -311,7 +325,10 @@ function generateReport({
       description: f.description,
       remediation: f.remediation,
       owasp: f.owasp,
-      cwe: f.cwe
+      cwe: f.cwe,
+      validationStatus: f.validationStatus,
+      confidence: f.confidence,
+      source: f.source
     }));
   }
 

@@ -17,7 +17,7 @@ async function generateReportPDF(reportData) {
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <h3 style="margin: 0; color: #f8fafc; font-size: 15px;">${f.title}</h3>
           <div style="display:flex;gap:6px;align-items:center;">
-            ${f.confidence ? `<span style="font-size:10px;text-transform:uppercase;padding:2px 6px;border-radius:4px;background:${f.confidence === 'confirmed' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'};color:${f.confidence === 'confirmed' ? '#f87171' : '#fbbf24'};font-weight:bold;">${f.confidence}</span>` : ''}
+            ${f.validationStatus ? `<span style="font-size:10px;text-transform:uppercase;padding:2px 6px;border-radius:4px;background:${f.validationStatus === 'confirmed' ? 'rgba(16,185,129,0.15)' : f.validationStatus === 'recommendation' ? 'rgba(59,130,246,0.15)' : 'rgba(245,158,11,0.15)'};color:${f.validationStatus === 'confirmed' ? '#6ee7b7' : f.validationStatus === 'recommendation' ? '#93c5fd' : '#fbbf24'};font-weight:bold;">${f.validationStatus.replace('_', ' ')}</span>` : ''}
             <span style="font-size: 11px; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.1); color: #cbd5e1; font-weight: bold;">${f.severity}</span>
           </div>
         </div>

@@ -4,16 +4,27 @@ const { analyzeAccessibility } = require('../src/services/accessibilityAnalyzer'
 const { analyzeSeo } = require('../src/services/seoAnalyzer');
 const { analyzeAiSearch } = require('../src/services/aiSearchAnalyzer');
 const { calculateScores } = require('../src/services/scoringEngine');
+const { normalizeFinding } = require('../src/services/reportGenerator');
 
 describe('Website Auditing Services Unit Tests', () => {
   
   describe('Performance Analyzer Heuristics', () => {
-    it('should calculate fallback performance scores correctly', async () => {
-      // In tests, Puppeteer may fall back to default timings due to sandbox restrictions
+    it('reports unavailable performance measurements without inventing a score', async () => {
       const res = await analyzePerformance('http://localhost:3000');
-      expect(res).toHaveProperty('performanceScore');
+      expect(res.measured).toBe(false);
+      expect(res.performanceScore).toBeNull();
+      expect(res.fcp).toBeNull();
+      expect(res.ttfb).toBeNull();
       expect(res.opportunities.length).toBe(0);
-      expect(res.diagnostics.length).toBeGreaterThan(0);
+      expect(res.diagnostics[0].value).toBe('Not measured');
+    });
+  });
+
+  describe('Finding validation labels', () => {
+    it('labels observed facts, probes, and advisory checks distinctly', () => {
+      expect(normalizeFinding({ id: 'missing-csp', category: 'Headers' }).validationStatus).toBe('confirmed');
+      expect(normalizeFinding({ id: 'reflected-xss-email', category: 'Forms' }).validationStatus).toBe('needs_verification');
+      expect(normalizeFinding({ id: 'seo-title-suboptimal', category: 'SEO' }).validationStatus).toBe('recommendation');
     });
   });
 

@@ -8,6 +8,7 @@ const redisPassword = process.env.REDIS_PASSWORD || null;
 let isRedisConnected = false;
 let scanQueue = null;
 let connection = null;
+const queueDisabled = process.env.SCAN_QUEUE_DISABLED === 'true';
 
 // In-memory queue fallback when Redis is offline
 const inMemoryQueue = [];
@@ -34,32 +35,36 @@ async function processNextInMemoryJob() {
 }
 
 try {
-  connection = new Redis({
-    host: redisHost,
-    port: redisPort,
-    password: redisPassword,
-    maxRetriesPerRequest: null,
-    enableOfflineQueue: false,
-    retryStrategy(times) {
-      if (times > 3) {
-        console.warn('[scanQueue] Redis unavailable. Falling back to in-memory queue handler.');
-        return null; // stop retrying and fallback
+  if (queueDisabled) {
+    console.log('[scanQueue] Background queue disabled for this environment.');
+  } else {
+    connection = new Redis({
+      host: redisHost,
+      port: redisPort,
+      password: redisPassword,
+      maxRetriesPerRequest: null,
+      enableOfflineQueue: false,
+      retryStrategy(times) {
+        if (times > 3) {
+          console.warn('[scanQueue] Redis unavailable. Falling back to in-memory queue handler.');
+          return null; // stop retrying and fallback
+        }
+        return Math.min(times * 100, 2000);
       }
-      return Math.min(times * 100, 2000);
-    }
-  });
+    });
 
-  connection.on('connect', () => {
-    isRedisConnected = true;
-    console.log('[scanQueue] Connected to Redis instance for BullMQ scan queue.');
-  });
+    connection.on('connect', () => {
+      isRedisConnected = true;
+      console.log('[scanQueue] Connected to Redis instance for BullMQ scan queue.');
+    });
 
-  connection.on('error', (err) => {
-    isRedisConnected = false;
-    // Suppress unhandled error log spam when Redis daemon is not running
-  });
+    connection.on('error', () => {
+      isRedisConnected = false;
+      // Suppress unhandled error log spam when Redis daemon is not running
+    });
 
-  scanQueue = new Queue('scan-queue', { connection });
+    scanQueue = new Queue('scan-queue', { connection });
+  }
 } catch (err) {
   console.warn('[scanQueue] Failed to initialize BullMQ Redis queue. Falling back to in-memory queue.');
   isRedisConnected = false;
@@ -67,6 +72,10 @@ try {
 
 async function addScanJob(data) {
   const { capabilities } = require('../config/scanCapabilities');
+
+  if (queueDisabled) {
+    return true;
+  }
 
   if (isRedisConnected && scanQueue) {
     try {
@@ -99,8 +108,19 @@ async function addScanJob(data) {
   return true;
 }
 
+async function closeScanQueue() {
+  const closers = [];
+  if (scanQueue) closers.push(scanQueue.close());
+  if (connection) closers.push(connection.quit().catch(() => connection.disconnect()));
+  await Promise.all(closers);
+  scanQueue = null;
+  connection = null;
+  isRedisConnected = false;
+}
+
 module.exports = {
   scanQueue,
   addScanJob,
+  closeScanQueue,
   getIsRedisConnected: () => isRedisConnected
 };

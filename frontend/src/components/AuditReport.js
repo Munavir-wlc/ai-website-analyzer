@@ -15,7 +15,8 @@ import { SEVERITY_COLORS, getSeverityStyle, getEffortLevel, EFFORT_CONFIG } from
 import FindingChatModal from './FindingChatModal';
 
 function GradeGauge({ grade, score, size = 'md', color }) {
-  const s = score ?? 0;
+  const hasScore = Number.isFinite(score);
+  const s = hasScore ? score : 0;
   const circumference = 2 * Math.PI * 45;
   const offset = circumference - (s / 100) * circumference;
   const dim = size === 'large' ? 28 : 20;
@@ -40,7 +41,7 @@ function GradeGauge({ grade, score, size = 'md', color }) {
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className={`font-extrabold ${size === 'large' ? 'text-5xl' : 'text-2xl'} text-white`}>
-          {grade ?? '—'}
+          {hasScore ? (grade ?? '—') : '—'}
         </span>
       </div>
     </div>
@@ -160,6 +161,16 @@ function getCanonicalCategory(finding) {
   return finding.category || 'General Audits';
 }
 
+function getValidationMeta(finding) {
+  const status = finding.validationStatus || 'needs_verification';
+  const meta = {
+    confirmed: { label: 'Confirmed', className: 'bg-ok/10 text-ok border-ok/30' },
+    needs_verification: { label: 'Needs verification', className: 'bg-caution/10 text-caution border-caution/30' },
+    recommendation: { label: 'Recommendation', className: 'bg-primary/10 text-primary border-primary/30' }
+  };
+  return meta[status] || meta.needs_verification;
+}
+
 export default function AuditReport({ result, screenshots, executiveSummary }) {
   const [activeSeverityFilter, setActiveSeverityFilter] = useState('all');
   const [activeReportTab, setActiveReportTab] = useState('overview');
@@ -228,13 +239,14 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
   const handleExportCSV = () => {
     const findings = result.findings || [];
     const headers = [
-      'Category', 'Severity', 'Confidence', 'Title',
+      'Category', 'Severity', 'Result Type', 'Detection Confidence', 'Title',
       'Description', 'Affected URL', 'Evidence / Proof',
       'Remediation', 'OWASP Reference'
     ];
     const rows = findings.map(f => [
       f.category || 'General',
       f.severity || 'info',
+      getValidationMeta(f).label,
       f.confidence || 'informational',
       f.title || '',
       (f.description || '').replace(/"/g, '""'),
@@ -278,8 +290,8 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
     overallGrade: result.grade || 'F',
     security: result.securityScore || result.score || 0,
     securityGrade: result.grade || 'F',
-    performance: result.performanceData?.performanceScore ?? 100,
-    performanceGrade: 'A',
+    performance: result.performanceData?.performanceScore ?? null,
+    performanceGrade: result.performanceData?.performanceScore == null ? 'Not measured' : 'N/A',
     seo: result.seoData?.seoScore ?? 100,
     seoGrade: 'A',
     accessibility: result.accessibilityData?.accessibilityScore ?? 100,
@@ -662,14 +674,14 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
           )}
           <Link
             href={`/compare?targetScanId=${result.scanId}`}
-            className="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 flex items-center gap-2 py-2 px-4 rounded-xl text-xs font-semibold transition-all"
+            className="bg-card hover:bg-muted text-foreground border border-border flex items-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-colors"
           >
-            <BarChart3 className="h-4 w-4 text-indigo-400" /> Compare Scan
+            <BarChart3 className="h-4 w-4 text-primary" /> Compare Scan
           </Link>
           <Button 
-            variant="outline" 
+            variant="default" 
             onClick={() => window.print()} 
-            className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold border-transparent shadow-lg shadow-indigo-500/20 flex items-center gap-2 py-2 px-4 rounded-xl text-xs transition-all hover:scale-[1.02]"
+            className="flex items-center gap-1.5 py-2 px-3 text-xs"
           >
             <Printer className="h-4 w-4" /> Print / Save PDF
           </Button>
@@ -677,21 +689,21 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
             href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/scan/results/${result.scanId || scanId}/pdf`}
             target="_blank"
             rel="noopener noreferrer"
-            className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold border-transparent shadow-lg shadow-emerald-500/20 flex items-center gap-2 py-2 px-4 rounded-xl text-xs transition-all hover:scale-[1.02]"
+            className="bg-card hover:bg-muted text-foreground border border-border flex items-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-colors"
           >
-            <Download className="h-4 w-4" /> Server Download PDF
+            <Download className="h-4 w-4" /> Download PDF
           </a>
           <Button 
             variant="outline" 
             onClick={handleExportJSON} 
-            className="bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800 hover:border-slate-700 flex items-center gap-2 py-2 px-4 rounded-xl text-xs"
+            className="flex items-center gap-1.5 py-2 px-3 text-xs"
           >
             <Database className="h-4 w-4" /> Export JSON
           </Button>
           <Button 
             variant="outline" 
             onClick={handleExportCSV} 
-            className="bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800 hover:border-slate-700 flex items-center gap-2 py-2 px-4 rounded-xl text-xs"
+            className="flex items-center gap-1.5 py-2 px-3 text-xs"
           >
             <Download className="h-4 w-4" /> Export CSV
           </Button>
@@ -699,25 +711,24 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
       </div>
 
       {/* Executive Summary Card (Top of Report) */}
-      <div className="border border-indigo-500/30 rounded-3xl bg-gradient-to-r from-indigo-950/70 via-slate-900/90 to-purple-950/70 p-6 sm:p-7 shadow-2xl relative overflow-hidden backdrop-blur-md mb-8">
-        <div className="absolute top-0 right-0 -mr-12 -mt-12 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="border border-border rounded-lg bg-card p-6 shadow-sm relative overflow-hidden mb-8">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
-            <div className={`p-1.5 rounded-xl border ${result.aiEnabled ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
-              <Sparkles className={`w-4 h-4 ${result.aiEnabled ? 'text-indigo-400 animate-pulse' : 'text-slate-400'}`} />
+            <div className="p-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20">
+              <Sparkles className="w-4 h-4" />
             </div>
-            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-indigo-300">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground font-mono">
               Executive Summary
             </h3>
           </div>
           {result.aiEnabled ? (
-            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5">
-              <Sparkles className="w-3 h-3 text-indigo-400 animate-pulse" />
-              AI-Assisted Analysis
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-primary" />
+              AI Analysis
             </span>
           ) : (
-            <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
-              Static Analysis Only
+            <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border">
+              Deterministic
             </span>
           )}
         </div>
@@ -740,60 +751,59 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
       </div>
 
       {/* Audit Overview & Summary */}
-      <div className="border border-slate-800 rounded-3xl bg-slate-900/60 p-6 sm:p-8 shadow-2xl relative overflow-hidden">
-        <div className="absolute -inset-px bg-gradient-to-br from-indigo-500/10 to-purple-500/0 rounded-3xl -z-10" />
+      <div className="border border-border rounded-lg bg-card p-6 shadow-sm relative overflow-hidden mb-8">
         <div className="flex flex-col items-center gap-6 w-full">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 w-full max-w-5xl py-4 justify-items-center">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 w-full max-w-5xl py-2 justify-items-center">
             <div className="flex flex-col items-center text-center space-y-2">
-              <GradeGauge grade={scores.overallGrade} score={scores.overall} size="md" color="#6366f1" />
+              <GradeGauge grade={scores.overallGrade} score={scores.overall} size="md" color="#2E5FE8" />
               <div>
-                <div className="text-sm font-bold text-white">{scores.overall}/100</div>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Overall Score</p>
+                <div className="text-sm font-bold font-mono text-foreground">{scores.overall}/100</div>
+                <p className="text-[10px] text-muted-foreground font-mono font-bold uppercase tracking-wider">Overall</p>
               </div>
             </div>
 
             <div className="flex flex-col items-center text-center space-y-2">
-              <GradeGauge grade={scores.securityGrade} score={scores.security} size="md" color="#ef4444" />
+              <GradeGauge grade={scores.securityGrade} score={scores.security} size="md" color="#EF4444" />
               <div>
-                <div className="text-sm font-bold text-white">{scores.security}/100</div>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Security</p>
+                <div className="text-sm font-bold font-mono text-foreground">{scores.security}/100</div>
+                <p className="text-[10px] text-muted-foreground font-mono font-bold uppercase tracking-wider">Security</p>
               </div>
             </div>
 
             <div className="flex flex-col items-center text-center space-y-2">
-              <GradeGauge grade={scores.performanceGrade} score={scores.performance} size="md" color="#38bdf8" />
+              <GradeGauge grade={scores.performanceGrade} score={scores.performance} size="md" color="#3B82F6" />
               <div>
-                <div className="text-sm font-bold text-white">{scores.performance}/100</div>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Performance</p>
+                <div className="text-sm font-bold font-mono text-foreground">{scores.performance == null ? 'Not measured' : `${scores.performance}/100`}</div>
+                <p className="text-[10px] text-muted-foreground font-mono font-bold uppercase tracking-wider">Performance</p>
               </div>
             </div>
 
             <div className="flex flex-col items-center text-center space-y-2">
-              <GradeGauge grade={scores.seoGrade} score={scores.seo} size="md" color="#f59e0b" />
+              <GradeGauge grade={scores.seoGrade} score={scores.seo} size="md" color="#F59E0B" />
               <div>
-                <div className="text-sm font-bold text-white">{scores.seo}/100</div>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">SEO</p>
+                <div className="text-sm font-bold font-mono text-foreground">{scores.seo}/100</div>
+                <p className="text-[10px] text-muted-foreground font-mono font-bold uppercase tracking-wider">SEO</p>
               </div>
             </div>
 
             <div className="flex flex-col items-center text-center space-y-2">
-              <GradeGauge grade={scores.accessibilityGrade} score={scores.accessibility} size="md" color="#10b981" />
+              <GradeGauge grade={scores.accessibilityGrade} score={scores.accessibility} size="md" color="#10B981" />
               <div>
-                <div className="text-sm font-bold text-white">{scores.accessibility}/100</div>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Accessibility</p>
+                <div className="text-sm font-bold font-mono text-foreground">{scores.accessibility}/100</div>
+                <p className="text-[10px] text-muted-foreground font-mono font-bold uppercase tracking-wider">Accessibility</p>
               </div>
             </div>
 
             <div className="flex flex-col items-center text-center space-y-2">
-              <GradeGauge grade={scores.aiSearchGrade} score={scores.aiSearch} size="md" color="#a855f7" />
+              <GradeGauge grade={scores.aiSearchGrade} score={scores.aiSearch} size="md" color="#8B5CF6" />
               <div>
-                <div className="text-sm font-bold text-white">{scores.aiSearch}/100</div>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">GEO / AI Search</p>
+                <div className="text-sm font-bold font-mono text-foreground">{scores.aiSearch}/100</div>
+                <p className="text-[10px] text-muted-foreground font-mono font-bold uppercase tracking-wider">AI Search</p>
               </div>
             </div>
           </div>
 
-          <div className="w-full border-t border-slate-800/80 my-2" />
+          <div className="w-full border-t border-border my-2" />
 
           <div className="flex flex-col md:flex-row items-center gap-8 justify-around w-full">
 
@@ -1502,41 +1512,41 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
 
       {/* Vulnerabilities Details with Filter Tabs, Sorting & Categorized Collapsible Sections */}
       <div className={activeReportTab === 'vulnerabilities' ? 'block' : 'hidden print:block'}>
-        <div className="border border-slate-800 rounded-3xl bg-slate-900/60 p-4 sm:p-6 lg:p-8 shadow-2xl">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4 mb-6">
-            <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-indigo-400" />
+        <div className="border border-border rounded-lg bg-card p-5 sm:p-6 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-4 mb-6">
+            <h3 className="text-base sm:text-lg font-bold text-foreground flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-primary" />
               Audit Findings & Vulnerabilities ({filteredIssues.length})
             </h3>
             
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 print:hidden">
               {/* Search Bar */}
               <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <input
                   ref={searchInputRef}
                   type="text"
                   placeholder="Search findings... ( / )"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 w-full sm:w-56 transition-all font-mono"
+                  className="bg-background border border-border rounded-lg pl-9 pr-3.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-56 transition-all font-mono"
                 />
               </div>
 
               {/* Severity Filters */}
-              <div className="flex flex-wrap gap-1 p-1 bg-slate-950 border border-slate-800 rounded-xl">
+              <div className="flex flex-wrap gap-1 p-1 bg-muted rounded-lg border border-border">
                 {filterTabs.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveSeverityFilter(tab.id)}
-                    className={`px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${
                       activeSeverityFilter === tab.id
-                        ? 'bg-slate-800 text-white shadow-md'
-                        : 'text-slate-400 hover:text-white'
+                        ? 'bg-card text-foreground shadow-sm font-semibold'
+                        : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
                     <span>{tab.label}</span>
-                    <span className="h-4 min-w-4 px-1 flex items-center justify-center text-[10px] font-bold rounded-full bg-slate-900 border border-slate-800 text-slate-300">
+                    <span className="h-4 min-w-4 px-1 flex items-center justify-center text-[10px] font-mono font-bold rounded bg-background border border-border text-muted-foreground">
                       {tab.count}
                     </span>
                   </button>
@@ -1546,33 +1556,33 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
           </div>
 
           {/* Sort & Collapsible View Controls */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/80 mb-6 print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-muted/30 p-3 rounded-lg border border-border mb-6 print:hidden">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <Filter className="w-3.5 h-3.5 text-indigo-400" /> Sort Findings:
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 font-mono">
+                <Filter className="w-3.5 h-3.5 text-primary" /> Sort:
               </span>
-              <div className="flex rounded-xl bg-slate-900 p-0.5 border border-slate-800">
+              <div className="flex rounded-lg bg-muted p-0.5 border border-border">
                 <button
                   type="button"
                   onClick={() => setSortBy('severity')}
-                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
                     sortBy === 'severity'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-primary text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  Severity (Default)
+                  Severity
                 </button>
                 <button
                   type="button"
                   onClick={() => setSortBy('quick_wins')}
-                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 ${
                     sortBy === 'quick_wins'
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-primary text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <Zap className="w-3.5 h-3.5 text-amber-300" /> Quick Wins First
+                  <Zap className="w-3.5 h-3.5" /> Quick Wins
                 </button>
               </div>
             </div>
@@ -1581,15 +1591,15 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
               <button
                 type="button"
                 onClick={expandAllSections}
-                className="text-xs font-medium text-slate-400 hover:text-white px-2.5 py-1 rounded-lg hover:bg-slate-800 transition-colors"
+                className="text-xs font-medium text-muted-foreground hover:text-foreground px-2.5 py-1 rounded-lg hover:bg-muted transition-colors"
               >
                 Expand All
               </button>
-              <span className="text-slate-700">|</span>
+              <span className="text-border">|</span>
               <button
                 type="button"
                 onClick={collapseAllSections}
-                className="text-xs font-medium text-slate-400 hover:text-white px-2.5 py-1 rounded-lg hover:bg-slate-800 transition-colors"
+                className="text-xs font-medium text-muted-foreground hover:text-foreground px-2.5 py-1 rounded-lg hover:bg-muted transition-colors"
               >
                 Collapse All
               </button>
@@ -1686,89 +1696,116 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
                             resolved: { label: 'Marked Resolved', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' }
                           };
 
+                          const getSeverityBorder = (s) => {
+                            switch ((s || '').toLowerCase()) {
+                              case 'critical':
+                                return 'border-l-4 border-l-critical border-t border-r border-b border-border bg-card';
+                              case 'high':
+                                return 'border-l-4 border-l-orange-500 border-t border-r border-b border-border bg-card';
+                              case 'medium':
+                              case 'caution':
+                                return 'border-l-4 border-l-caution border-t border-r border-b border-border bg-card';
+                              case 'low':
+                                return 'border-l-4 border-l-blue-500 border-t border-r border-b border-border bg-card';
+                              case 'fixed':
+                              case 'resolved':
+                              case 'ok':
+                                return 'border-l-4 border-l-ok border-t border-r border-b border-border bg-card';
+                              default:
+                                return 'border-l-4 border-l-border border-t border-r border-b border-border bg-card';
+                            }
+                          };
+                          const validationMeta = getValidationMeta(issue);
+
                           return (
                             <div
                               key={issue.id || idx}
-                              className={`border rounded-2xl p-4 sm:p-5 transition flex flex-col md:flex-row gap-4 justify-between ${
+                              className={`rounded-lg p-4 sm:p-5 transition-all text-left flex flex-col md:flex-row gap-4 justify-between ${
                                 isFixed 
-                                  ? 'border-emerald-500/30 bg-emerald-950/10' 
-                                  : 'border-slate-800/90 bg-slate-950/50 hover:bg-slate-950/80'
+                                  ? 'border-l-4 border-l-ok border-t border-r border-b border-border bg-card' 
+                                  : getSeverityBorder(issue.severity)
                               }`}
                             >
                               <div className="space-y-2 flex-1 min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  {isFixed && <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />}
-                                  <span className="font-bold text-white text-sm sm:text-base break-words">
-                                    {issue.title}
+                                  {isFixed && <CheckCircle className="h-4 w-4 text-ok shrink-0" />}
+                                  <span className={`font-mono text-[10px] font-extrabold uppercase tracking-wider ${
+                                    isFixed ? 'text-ok' :
+                                    issue.severity === 'critical' ? 'text-critical' :
+                                    issue.severity === 'high' ? 'text-orange-600 dark:text-orange-400' :
+                                    (issue.severity === 'medium' || issue.severity === 'caution') ? 'text-caution' :
+                                    'text-muted-foreground'
+                                  }`}>
+                                    {isFixed ? 'RESOLVED' : issue.severity || 'LOW'}
                                   </span>
                                   {issue.category && (
-                                    <Badge className="text-[10px] uppercase bg-slate-800 text-slate-400 font-mono tracking-wider border border-slate-700">
+                                    <span className="text-[10px] uppercase bg-muted text-muted-foreground font-mono tracking-wider px-2 py-0.5 rounded border border-border">
                                       {issue.category}
-                                    </Badge>
+                                    </span>
                                   )}
-                                  {issue.owasp && (
-                                    <Badge className="text-[10px] uppercase text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 font-mono tracking-wider">
-                                      {issue.owasp}
-                                    </Badge>
-                                  )}
-                                  {/* Effort badge */}
-                                  <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${effortMeta.badge}`}>
-                                    <Zap className="w-2.5 h-2.5" /> {effortMeta.label}
+                                  <span className={`text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded border ${validationMeta.className}`}>
+                                    {validationMeta.label}
                                   </span>
-                                  {isFixed && (
-                                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/35">
-                                      Fixed / Resolved
+                                  {issue.owasp && (
+                                    <span className="text-[10px] uppercase text-primary bg-primary/10 border border-primary/20 font-mono tracking-wider px-2 py-0.5 rounded">
+                                      {issue.owasp}
                                     </span>
                                   )}
                                 </div>
 
-                                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mt-1 break-words">
+                                <div>
+                                  <h4 className="font-bold text-foreground text-sm sm:text-base break-words">
+                                    {issue.title}
+                                  </h4>
+                                  {issue.affectedUrl && (
+                                    <p className="font-mono text-xs text-primary break-all mt-0.5">
+                                      {issue.affectedUrl}
+                                    </p>
+                                  )}
+                                </div>
+
+                                <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
                                   {issue.description}
                                 </p>
 
-                                {/* Evidence block — affectedUrl, proof, confidence (Item 8) */}
-                                {(issue.affectedUrl || issue.proof || issue.confidence) && (
-                                  <div className="mt-2 rounded-xl border border-slate-700/60 bg-slate-950/70 overflow-hidden">
-                                    <div className="px-3 py-1.5 border-b border-slate-800/80 flex items-center justify-between">
-                                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Evidence</span>
-                                      {issue.confidence && (
-                                        <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${
-                                          issue.confidence === 'confirmed' ? 'bg-rose-500/10 text-rose-400 border-rose-500/25'
-                                          : issue.confidence === 'likely' ? 'bg-amber-500/10 text-amber-400 border-amber-500/25'
-                                          : 'bg-slate-800 text-slate-400 border-slate-700'
-                                        }`}>
-                                          {issue.confidence}
-                                        </span>
-                                      )}
+                                {/* Evidence block — affectedUrl, proof, confidence */}
+                                {(issue.affectedUrl || issue.proof || issue.confidence || issue.validationStatus) && (
+                                  <div className="mt-2 rounded-lg border border-border bg-muted/40 overflow-hidden">
+                                    <div className="px-3 py-1.5 border-b border-border flex items-center justify-between">
+                                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground font-mono">Evidence</span>
+                                      <span className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${validationMeta.className}`}>
+                                        {validationMeta.label}
+                                      </span>
                                     </div>
                                     <div className="p-3 space-y-1.5 font-mono text-[11px]">
                                       {issue.affectedUrl && (
                                         <div className="flex items-start gap-2">
-                                          <span className="text-slate-500 shrink-0 pt-0.5">URL</span>
-                                          <span className="text-cyan-400 break-all">{issue.affectedUrl}</span>
+                                          <span className="text-muted-foreground shrink-0 pt-0.5">URL:</span>
+                                          <span className="text-primary break-all">{issue.affectedUrl}</span>
                                         </div>
                                       )}
                                       {issue.proof && (
                                         <div className="flex items-start gap-2">
-                                          <span className="text-slate-500 shrink-0 pt-0.5">Proof</span>
-                                          <span className="text-amber-300 break-all">{issue.proof}</span>
+                                          <span className="text-muted-foreground shrink-0 pt-0.5">Proof:</span>
+                                          <span className="text-foreground break-all">{issue.proof}</span>
+                                        </div>
+                                      )}
+                                      {issue.confidence && (
+                                        <div className="flex items-start gap-2">
+                                          <span className="text-muted-foreground shrink-0 pt-0.5">Detection:</span>
+                                          <span className="text-foreground capitalize">{issue.confidence}</span>
                                         </div>
                                       )}
                                     </div>
                                   </div>
                                 )}
+
                                 {issue.remediation && (
-                                  <div className={`rounded-xl p-3.5 sm:p-4 border-l-4 text-xs sm:text-sm mt-2 font-medium ${
-                                    isFixed 
-                                      ? 'bg-emerald-950/20 border-emerald-500 text-slate-300' 
-                                      : 'bg-slate-950/90 border-indigo-500 text-slate-300'
-                                  }`}>
-                                    <strong className={`font-semibold block mb-1 text-xs uppercase tracking-wider ${
-                                      isFixed ? 'text-emerald-400' : 'text-indigo-400'
-                                    }`}>
+                                  <div className="rounded-lg p-3.5 border-l-2 border-primary bg-muted/20 text-xs mt-2 space-y-1">
+                                    <strong className="font-bold uppercase tracking-wider text-[11px] text-primary block">
                                       {isFixed ? 'Verification Detail:' : 'Remediation Guide:'}
                                     </strong>
-                                    <div className="break-words">
+                                    <div className="break-words text-foreground">
                                       {isFixed ? 'Security audit verified that this issue is no longer present on your server.' : issue.remediation}
                                     </div>
                                     {!isFixed && <RemediationTabs title={issue.title} />}
@@ -1776,12 +1813,7 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
                                 )}
                               </div>
 
-                              <div className="shrink-0 flex md:flex-col items-center md:items-end justify-between md:justify-start gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800/60">
-                                <span
-                                  className={`inline-flex px-2.5 sm:px-3 py-1 text-[10px] sm:text-xs rounded-lg font-extrabold uppercase tracking-wider border ${sev.badge}`}
-                                >
-                                  {isFixed ? 'RESOLVED' : issue.severity || 'LOW'}
-                                </span>
+                              <div className="shrink-0 flex md:flex-col items-center md:items-end justify-between md:justify-start gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-border">
                                 {!isFixed && (
                                   <button
                                     type="button"
@@ -1789,9 +1821,9 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
                                       e.stopPropagation();
                                       setActiveChatFinding(issue);
                                     }}
-                                    className="flex items-center gap-1 text-[10px] font-bold text-indigo-400 hover:text-white bg-indigo-500/10 hover:bg-indigo-600 border border-indigo-500/20 px-2.5 py-1 rounded-lg transition-all shadow-sm cursor-pointer"
+                                    className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
                                   >
-                                    <Sparkles className="h-3 w-3 text-indigo-400 animate-pulse" /> Ask AI
+                                    <Sparkles className="h-3.5 w-3.5 text-primary" /> Ask AI
                                   </button>
                                 )}
                                 {!isFixed && result.belongsToCurrentUser && (
@@ -1799,7 +1831,7 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
                                     value={currentStatus}
                                     onChange={(e) => handleStatusChange(e.target.value)}
                                     onClick={(e) => e.stopPropagation()}
-                                    className={`text-[10px] font-bold border rounded-lg px-2 py-1 focus:outline-none cursor-pointer transition-colors ${STATUS_CONFIG[currentStatus]?.color || STATUS_CONFIG.open.color}`}
+                                    className="text-xs font-mono font-medium border border-border bg-card text-foreground rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-colors"
                                   >
                                     <option value="open">Open</option>
                                     <option value="in_progress">In Progress</option>
@@ -2626,7 +2658,7 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
               <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-indigo-400" /> Performance Diagnostics
                 <span className="ml-auto text-xs font-normal text-slate-400">
-                  Score: {result.performanceData?.performanceScore ?? 100}/100
+                  Score: {result.performanceData?.performanceScore == null ? 'Not measured' : `${result.performanceData.performanceScore}/100`}
                 </span>
               </CardTitle>
             </CardHeader>
@@ -2635,19 +2667,19 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
                 <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
                   <span className="text-slate-500 text-[10px] uppercase font-bold block">First Contentful Paint (FCP)</span>
                   <span className="text-xl font-bold text-white block mt-1">
-                    {result.performanceData?.fcp ? `${Math.round(result.performanceData.fcp)} ms` : 'N/A'}
+                    {result.performanceData?.fcp != null ? `${Math.round(result.performanceData.fcp)} ms` : 'N/A'}
                   </span>
                 </div>
                 <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
                   <span className="text-slate-500 text-[10px] uppercase font-bold block">Time to First Byte (TTFB)</span>
                   <span className="text-xl font-bold text-white block mt-1">
-                    {result.performanceData?.ttfb ? `${Math.round(result.performanceData.ttfb)} ms` : 'N/A'}
+                    {result.performanceData?.ttfb != null ? `${Math.round(result.performanceData.ttfb)} ms` : 'N/A'}
                   </span>
                 </div>
                 <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
                   <span className="text-slate-500 text-[10px] uppercase font-bold block">Load Time Estimate</span>
                   <span className="text-xl font-bold text-white block mt-1">
-                    {result.performanceData?.loadTime ? `${Math.round(result.performanceData.loadTime)} ms` : 'N/A'}
+                    {result.performanceData?.loadTime != null ? `${Math.round(result.performanceData.loadTime)} ms` : 'N/A'}
                   </span>
                 </div>
               </div>
@@ -2655,7 +2687,11 @@ export default function AuditReport({ result, screenshots, executiveSummary }) {
               {/* Performance Opportunities */}
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Performance Opportunities</h4>
-                {(!result.performanceData?.opportunities || result.performanceData.opportunities.length === 0) ? (
+                {result.performanceData?.measured === false ? (
+                  <p className="text-amber-400 text-xs font-semibold py-2">
+                    Performance was not measured{result.performanceData.unavailableReason ? `: ${result.performanceData.unavailableReason}` : '.'}
+                  </p>
+                ) : (!result.performanceData?.opportunities || result.performanceData.opportunities.length === 0) ? (
                   <p className="text-emerald-400 text-xs font-semibold py-2">✓ No critical performance bottlenecks detected.</p>
                 ) : (
                   <div className="space-y-3">

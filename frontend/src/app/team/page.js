@@ -3,11 +3,18 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Navbar from '@/components/Navbar';
-import Footer from '@/components/Footer';
+import AppShell from '@/components/AppShell';
+import PageHeader from '@/components/ui/PageHeader';
+import { Button } from '@/components/ui/Button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import Badge from '@/components/ui/Badge';
+import EmptyState from '@/components/ui/EmptyState';
 import { useAuth } from '@/lib/AuthContext';
 import { useWorkspace } from '@/lib/WorkspaceContext';
-import { Users, Plus, UserPlus, Shield, Trash2, Mail, CheckCircle, AlertCircle, Copy, Check, LogIn } from 'lucide-react';
+import { 
+  Users, Plus, UserPlus, Shield, Trash2, Mail, CheckCircle, 
+  AlertCircle, Copy, Check, LogIn, ExternalLink, RefreshCw, Globe
+} from 'lucide-react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -225,364 +232,382 @@ function TeamPageContent() {
 
   if (!user && !loading) {
     return (
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-16 text-center space-y-6">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-12 shadow-2xl space-y-6 max-w-lg mx-auto">
-          <div className="h-16 w-16 bg-indigo-600/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center mx-auto">
-            <Users className="h-8 w-8" />
-          </div>
-          <div className="space-y-2">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Authentication Required</h2>
-            <p className="text-slate-600 dark:text-slate-400 text-sm">
-              Please sign in or register an account to create and manage multi-user team workspaces.
-            </p>
-          </div>
-          <div className="flex justify-center gap-4 pt-2">
-            <Link
-              href="/login"
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2"
-            >
-              <LogIn className="h-4 w-4" /> Sign In
-            </Link>
-            <Link
-              href="/register"
-              className="bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-all"
-            >
-              Register Account
-            </Link>
-          </div>
+      <AppShell activePath="/team">
+        <div className="flex-1 flex items-center justify-center p-8">
+          <Card className="max-w-md w-full p-8 text-center space-y-4">
+            <div className="h-12 w-12 bg-primary/10 text-primary rounded-lg flex items-center justify-center mx-auto">
+              <Users className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold text-foreground">Authentication Required</h2>
+              <p className="text-muted-foreground text-xs">
+                Please sign in or register an account to create and manage multi-user team workspaces.
+              </p>
+            </div>
+            <div className="flex justify-center gap-3 pt-2">
+              <Button asChild>
+                <Link href="/login" className="gap-2">
+                  <LogIn className="h-4 w-4" /> Sign In
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/register">Register</Link>
+              </Button>
+            </div>
+          </Card>
         </div>
-      </main>
+      </AppShell>
     );
   }
 
   return (
-    <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-10 space-y-8">
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
-        <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
-            <Users className="h-8 w-8 text-indigo-600 dark:text-indigo-400" /> Multi-User Team Workspaces
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">
-            Collaborate on security audits, invite team members, and share asset vulnerability reports.
-          </p>
-        </div>
-
-        <form onSubmit={handleJoinByToken} className="flex items-center gap-2 w-full md:w-auto">
-          <input
-            type="text"
-            placeholder="Paste Join Token..."
-            value={joinTokenInput}
-            onChange={(e) => setJoinTokenInput(e.target.value)}
-            className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-          />
-          <button
-            type="submit"
-            className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 px-4 rounded-xl transition-all shadow-md shadow-indigo-500/20"
-          >
-            Join Team
-          </button>
-        </form>
-      </div>
-
-      {/* In-App Pending Invitations Notification Banner */}
-      {pendingInvitations.length > 0 && (
-        <div className="bg-gradient-to-r from-indigo-900/40 via-purple-900/30 to-slate-900 border-2 border-indigo-500/50 p-5 rounded-2xl shadow-2xl space-y-3">
-          <div className="flex items-center gap-2 text-indigo-300 font-bold text-sm uppercase tracking-wider">
-            <Mail className="h-5 w-5 text-indigo-400 animate-bounce" /> Pending Workspace Invitations ({pendingInvitations.length})
-          </div>
-          <div className="space-y-2">
-            {pendingInvitations.map((inv) => (
-              <div key={inv.inviteToken} className="bg-slate-950/80 border border-indigo-500/30 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-bold text-white">
-                    You have been invited to join <span className="text-indigo-400">{inv.teamName}</span>
-                  </div>
-                  <div className="text-xs text-slate-400 mt-0.5">
-                    Invited by {inv.ownerName} as <span className="uppercase font-semibold text-indigo-300">{inv.role}</span>
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleAcceptInvite(inv.inviteToken)}
-                  className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-lg shadow-indigo-500/30 flex items-center gap-1.5 transition-all"
-                >
-                  <CheckCircle className="h-4 w-4 text-emerald-400" /> Accept Workspace Invitation
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-300 p-4 rounded-2xl flex items-center justify-between text-sm">
-          <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-rose-500 dark:text-rose-400 hover:opacity-80 font-bold">×</button>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* Create & Select Team Column */}
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Plus className="h-4 w-4 text-indigo-600 dark:text-indigo-400" /> Create New Workspace
-            </h2>
-            <form onSubmit={handleCreateTeam} className="space-y-3">
+    <AppShell activePath="/team">
+      <div className="space-y-6">
+        <PageHeader
+          title="Multi-User Team Workspaces"
+          description="Collaborate on security audits, invite team members, and share asset vulnerability reports."
+          breadcrumbs={[
+            { label: 'Console', href: '/dashboard' },
+            { label: 'Team Workspaces' }
+          ]}
+          actions={
+            <form onSubmit={handleJoinByToken} className="flex items-center gap-2">
               <input
                 type="text"
-                placeholder="e.g. Acme Cyber Security Team"
-                value={newTeamName}
-                onChange={(e) => setNewTeamName(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                placeholder="Paste Join Token..."
+                value={joinTokenInput}
+                onChange={(e) => setJoinTokenInput(e.target.value)}
+                className="bg-background border border-input rounded-lg px-3 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono w-44"
               />
-              <button
-                type="submit"
-                className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-lg shadow-indigo-500/20"
-              >
-                Create Workspace
-              </button>
+              <Button type="submit" size="sm">
+                Join Team
+              </Button>
             </form>
-          </div>
+          }
+        />
 
-          <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xl space-y-3">
-            <h2 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Your Workspaces</h2>
-            {teams.length === 0 ? (
-              <p className="text-xs text-slate-500">No team workspaces created yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {teams.map((t) => (
-                  <button
-                    key={t._id}
-                    onClick={() => {
-                      setActiveTeam(t);
-                      switchWorkspace(t._id);
-                    }}
-                    className={`w-full text-left p-3 rounded-xl border text-sm transition-all flex items-center justify-between ${
-                      activeTeam?._id === t._id
-                        ? 'bg-indigo-50 dark:bg-indigo-600/20 border-indigo-500/50 text-indigo-900 dark:text-white font-bold'
-                        : 'bg-slate-50/50 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/40'
-                    }`}
-                  >
-                    <span>{t.name}</span>
-                    <span className="text-[10px] bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400">
-                      {t.members?.length || 1} members
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Team Active Workspace Content */}
-        <div className="md:col-span-2 space-y-6">
-          {activeTeam ? (
-            <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">{activeTeam.name}</h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Created on {new Date(activeTeam.createdAt).toLocaleDateString()}</p>
-                </div>
-              </div>
-
-              {/* Invite Member Section (Owners & Admins only) */}
-              {(() => {
-                const isOwnerOrAdmin = activeTeam.ownerId?._id === user?.id || 
-                                       activeTeam.ownerId === user?.id || 
-                                       activeTeam.members?.some(m => (m.userId?._id === user?.id || m.userId === user?.id) && (m.role === 'owner' || m.role === 'admin'));
-
-                if (!isOwnerOrAdmin) {
-                  return (
-                    <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 p-4 rounded-xl text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                      <Shield className="h-4 w-4 text-indigo-500" />
-                      Only workspace Owners and Admins can send invitations to new team members.
+        {/* Pending Invitations Banner */}
+        {pendingInvitations.length > 0 && (
+          <div className="bg-primary/5 border border-primary/20 p-4 rounded-lg space-y-3">
+            <div className="flex items-center gap-2 text-primary font-semibold text-xs uppercase tracking-wider">
+              <Mail className="h-4 w-4" /> Pending Workspace Invitations ({pendingInvitations.length})
+            </div>
+            <div className="space-y-2">
+              {pendingInvitations.map((inv) => (
+                <div key={inv.inviteToken} className="bg-card border border-border p-3 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold text-foreground">
+                      You have been invited to join <span className="text-primary">{inv.teamName}</span>
                     </div>
-                  );
-                }
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Invited by {inv.ownerName} as <span className="uppercase font-semibold text-primary">{inv.role}</span>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleAcceptInvite(inv.inviteToken)}
+                    className="gap-1.5"
+                  >
+                    <CheckCircle className="h-3.5 w-3.5" /> Accept Invitation
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
-                return (
-                  <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 p-4 rounded-xl space-y-3">
-                    <h3 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-2">
-                      <UserPlus className="h-4 w-4" /> Invite Team Member
-                    </h3>
-                    <form onSubmit={handleInviteMember} className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="email"
-                        required
-                        placeholder="colleague@company.com"
-                        value={inviteEmail}
-                        onChange={(e) => setInviteEmail(e.target.value)}
-                        className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                      />
-                      <select
-                        value={inviteRole}
-                        onChange={(e) => setInviteRole(e.target.value)}
-                        className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none"
-                      >
-                        <option value="member">Member</option>
-                        <option value="admin">Admin</option>
-                      </select>
-                      <button
-                        type="submit"
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md shadow-indigo-500/20"
-                      >
-                        Send Invite
-                      </button>
-                    </form>
+        {error && (
+          <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3.5 rounded-lg flex items-center justify-between text-xs font-medium">
+            <span>{error}</span>
+            <button onClick={() => setError(null)} className="text-destructive hover:opacity-80 font-bold cursor-pointer">×</button>
+          </div>
+        )}
 
-                    {inviteResult && (
-                      <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 p-4 rounded-xl text-xs space-y-2.5 shadow-lg animate-fade-in">
-                        <div className="flex items-center gap-2 font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                          <CheckCircle className="h-5 w-5 flex-shrink-0" />
-                          {inviteResult.message || 'Invitation Sent Successfully!'}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Create & Select Team Column */}
+          <div className="space-y-6">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Plus className="h-4 w-4 text-primary" /> Create New Workspace
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleCreateTeam} className="space-y-3">
+                  <input
+                    type="text"
+                    placeholder="e.g. Acme Cyber Security Team"
+                    value={newTeamName}
+                    onChange={(e) => setNewTeamName(e.target.value)}
+                    className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                  />
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    size="sm"
+                  >
+                    Create Workspace
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Your Workspaces
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {teams.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No team workspaces created yet.</p>
+                ) : (
+                  teams.map((t) => (
+                    <button
+                      key={t._id}
+                      type="button"
+                      onClick={() => {
+                        setActiveTeam(t);
+                        switchWorkspace(t._id);
+                      }}
+                      className={`w-full text-left p-3 rounded-lg border text-xs transition-all flex items-center justify-between cursor-pointer ${
+                        activeTeam?._id === t._id
+                          ? 'bg-primary/10 border-primary text-foreground font-semibold'
+                          : 'bg-muted/30 border-border text-foreground hover:bg-muted/60'
+                      }`}
+                    >
+                      <span className="truncate">{t.name}</span>
+                      <span className="text-[10px] bg-muted px-2 py-0.5 rounded border border-border text-muted-foreground font-mono">
+                        {t.members?.length || 1} members
+                      </span>
+                    </button>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Team Active Workspace Content */}
+          <div className="md:col-span-2 space-y-6">
+            {activeTeam ? (
+              <Card>
+                <CardHeader className="pb-4 border-b border-border">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg font-bold text-foreground">{activeTeam.name}</CardTitle>
+                      <CardDescription className="text-xs font-mono mt-0.5">
+                        Created on {new Date(activeTeam.createdAt).toLocaleDateString()}
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+
+                <CardContent className="pt-6 space-y-6">
+                  {/* Invite Member Section (Owners & Admins only) */}
+                  {(() => {
+                    const isOwnerOrAdmin = activeTeam.ownerId?._id === user?.id || 
+                                           activeTeam.ownerId === user?.id || 
+                                           activeTeam.members?.some(m => (m.userId?._id === user?.id || m.userId === user?.id) && (m.role === 'owner' || m.role === 'admin'));
+
+                    if (!isOwnerOrAdmin) {
+                      return (
+                        <div className="bg-muted/40 border border-border p-3.5 rounded-lg text-xs text-muted-foreground flex items-center gap-2">
+                          <Shield className="h-4 w-4 text-primary shrink-0" />
+                          Only workspace Owners and Admins can send invitations to new team members.
                         </div>
-                        <p className="text-slate-600 dark:text-slate-400 text-[11px]">
-                          An email invitation has been dispatched to the member. You can also share the direct invite link below:
-                        </p>
-                        <div className="flex items-center gap-2 bg-white dark:bg-slate-950 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 text-[11px] font-mono">
-                          <span className="truncate flex-1 text-slate-800 dark:text-slate-300">{inviteResult.inviteLink}</span>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(inviteResult.inviteLink);
-                              setCopiedToken(true);
-                              setTimeout(() => setCopiedToken(false), 2000);
-                            }}
-                            className="text-indigo-600 dark:text-indigo-400 hover:opacity-80 font-sans flex items-center gap-1 font-semibold"
+                      );
+                    }
+
+                    return (
+                      <div className="bg-muted/30 border border-border p-4 rounded-lg space-y-3">
+                        <h3 className="text-xs font-semibold text-primary uppercase tracking-wider flex items-center gap-1.5">
+                          <UserPlus className="h-4 w-4" /> Invite Team Member
+                        </h3>
+                        <form onSubmit={handleInviteMember} className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="email"
+                            required
+                            placeholder="colleague@company.com"
+                            value={inviteEmail}
+                            onChange={(e) => setInviteEmail(e.target.value)}
+                            className="flex-1 bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                          />
+                          <select
+                            value={inviteRole}
+                            onChange={(e) => setInviteRole(e.target.value)}
+                            className="bg-background border border-input rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none cursor-pointer"
                           >
-                            {copiedToken ? <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                            {copiedToken ? 'Copied Link' : 'Copy Link'}
-                          </button>
+                            <option value="member">Member</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                          <Button
+                            type="submit"
+                            size="sm"
+                          >
+                            Send Invite
+                          </Button>
+                        </form>
+
+                        {inviteResult && (
+                          <div className="bg-ok/10 border border-ok/30 text-ok p-3.5 rounded-lg text-xs space-y-2">
+                            <div className="flex items-center gap-1.5 font-semibold">
+                              <CheckCircle className="h-4 w-4 shrink-0" />
+                              {inviteResult.message || 'Invitation Sent Successfully!'}
+                            </div>
+                            <p className="text-muted-foreground text-[11px]">
+                              An email invitation has been dispatched. You can also share the direct invite link below:
+                            </p>
+                            <div className="flex items-center gap-2 bg-card p-2 rounded-lg border border-border text-[11px] font-mono">
+                              <span className="truncate flex-1 text-foreground">{inviteResult.inviteLink}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(inviteResult.inviteLink);
+                                  setCopiedToken(true);
+                                  setTimeout(() => setCopiedToken(false), 2000);
+                                }}
+                                className="text-primary hover:opacity-80 flex items-center gap-1 font-semibold cursor-pointer"
+                              >
+                                {copiedToken ? <Check className="h-3.5 w-3.5 text-ok" /> : <Copy className="h-3.5 w-3.5" />}
+                                {copiedToken ? 'Copied' : 'Copy'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Members List */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Team Members</h3>
+                    <div className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                      {(activeTeam.members || []).map((m) => (
+                        <div key={m.userId?._id || m._id} className="p-3.5 bg-card flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-xs">
+                              {m.userId?.name ? m.userId.name.charAt(0).toUpperCase() : 'U'}
+                            </div>
+                            <div>
+                              <div className="text-xs font-semibold text-foreground">{m.userId?.name || 'Team User'}</div>
+                              <div className="text-[11px] text-muted-foreground font-mono">{m.userId?.email || '—'}</div>
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded bg-muted text-foreground border border-border font-mono">
+                            {m.role}
+                          </span>
                         </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Shared Team Scans List */}
+                  <div className="space-y-3 pt-4 border-t border-border">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                        <Shield className="h-4 w-4 text-primary" /> Shared Workspace Scans ({teamScans.length})
+                      </h3>
+                      <Link href="/" className="text-xs text-primary font-medium hover:underline">
+                        + Run New Security Scan
+                      </Link>
+                    </div>
+
+                    {teamScans.length === 0 ? (
+                      <div className="border border-dashed border-border rounded-lg p-6 text-center text-xs text-muted-foreground">
+                        No security scans run under this team workspace yet.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                        {teamScans.map((scan) => (
+                          <div key={scan.scanId} className="p-3.5 bg-card flex items-center justify-between gap-3">
+                            <div className="space-y-1 truncate">
+                              <div className="text-xs font-semibold text-foreground truncate font-mono">
+                                {scan.url}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground flex items-center gap-2 font-mono">
+                                <span>ID: {scan.scanId.substring(0, 8)}...</span>
+                                <span>•</span>
+                                <span>{new Date(scan.createdAt).toLocaleDateString()}</span>
+                                {scan.userId?.name && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-primary font-medium">By {scan.userId.name}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2.5 shrink-0">
+                              <span className={`px-2 py-0.5 rounded text-xs font-bold font-mono ${
+                                scan.grade === 'A' || scan.grade === 'A+' ? 'bg-ok/10 text-ok border border-ok/20' :
+                                scan.grade === 'B' ? 'bg-primary/10 text-primary border border-primary/20' :
+                                'bg-critical/10 text-critical border border-critical/20'
+                              }`}>
+                                {scan.score}/100 ({scan.grade})
+                              </span>
+                              <Button
+                                asChild
+                                size="sm"
+                              >
+                                <Link href={`/results?scanId=${scan.scanId}`}>
+                                  View Audit
+                                </Link>
+                              </Button>
+                              {(scan.userId?._id === user?.id || scan.userId === user?.id) && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={async () => {
+                                    try {
+                                      const res = await fetch(`${API_BASE}/api/team/move-scan/${scan.scanId}`, {
+                                        method: 'POST',
+                                        headers: {
+                                          'Content-Type': 'application/json',
+                                          ...getAuthHeader()
+                                        },
+                                        body: JSON.stringify({ targetWorkspaceId: 'personal' })
+                                      });
+                                      if (res.ok) {
+                                        fetchTeamScans(activeTeam._id);
+                                      }
+                                    } catch (e) {
+                                      console.error('Failed to move scan to personal:', e);
+                                    }
+                                  }}
+                                  title="Move scan to Personal Workspace (Private)"
+                                >
+                                  Move to Personal
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
-                );
-              })()}
-
-              {/* Members List */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Team Members</h3>
-                <div className="divide-y divide-slate-200 dark:divide-slate-800/60 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-                  {(activeTeam.members || []).map((m) => (
-                    <div key={m.userId?._id || m._id} className="p-3.5 bg-slate-50/50 dark:bg-slate-950/40 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-full bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-600 dark:text-indigo-300 font-bold text-xs">
-                          {m.userId?.name ? m.userId.name.charAt(0).toUpperCase() : 'U'}
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-900 dark:text-white">{m.userId?.name || 'Team User'}</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">{m.userId?.email || '—'}</div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-indigo-700 dark:text-indigo-300">
-                        {m.role}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Shared Team Scans List */}
-              <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-slate-800">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-indigo-600 dark:text-indigo-400" /> Shared Workspace Scans ({teamScans.length})
-                  </h3>
-                  <Link href="/" className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline">
-                    + Run New Security Scan
-                  </Link>
-                </div>
-
-                {teamScans.length === 0 ? (
-                  <div className="bg-slate-50/50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 rounded-xl p-6 text-center text-xs text-slate-500">
-                    No security scans run under this team workspace yet.
-                  </div>
-                ) : (
-                  <div className="divide-y divide-slate-200 dark:divide-slate-800/60 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-                    {teamScans.map((scan) => (
-                      <div key={scan.scanId} className="p-3.5 bg-slate-50/50 dark:bg-slate-950/40 flex items-center justify-between gap-3">
-                        <div className="space-y-1 truncate">
-                          <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                            {scan.url}
-                          </div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                            <span>Scan ID: <span className="font-mono">{scan.scanId.substring(0, 8)}...</span></span>
-                            <span>•</span>
-                            <span>{new Date(scan.createdAt).toLocaleDateString()}</span>
-                            {scan.userId?.name && (
-                              <>
-                                <span>•</span>
-                                <span className="text-indigo-600 dark:text-indigo-400 font-semibold">By {scan.userId.name}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                            scan.grade === 'A' || scan.grade === 'A+' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                            scan.grade === 'B' ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' :
-                            'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                          }`}>
-                            Score {scan.score}/100 ({scan.grade})
-                          </div>
-                          <Link
-                            href={`/results?scanId=${scan.scanId}`}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs"
-                          >
-                            View Audit Report
-                          </Link>
-                          {(scan.userId?._id === user?.id || scan.userId === user?.id) && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  const res = await fetch(`${API_BASE}/api/team/move-scan/${scan.scanId}`, {
-                                    method: 'POST',
-                                    headers: {
-                                      'Content-Type': 'application/json',
-                                      ...getAuthHeader()
-                                    },
-                                    body: JSON.stringify({ targetWorkspaceId: 'personal' })
-                                  });
-                                  if (res.ok) {
-                                    fetchTeamScans(activeTeam._id);
-                                  }
-                                } catch (e) {
-                                  console.error('Failed to move scan to personal:', e);
-                                }
-                              }}
-                              className="text-xs font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-800 px-2 py-1.5 rounded-lg transition-colors"
-                              title="Move scan to Personal Workspace (Private)"
-                            >
-                              Move to Personal
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center text-slate-500">
-              Select or create a workspace to view team members.
-            </div>
-          )}
+                </CardContent>
+              </Card>
+            ) : (
+              <EmptyState
+                icon={Users}
+                title="No Workspace Selected"
+                description="Select or create a workspace on the left to view team members and shared asset scans."
+              />
+            )}
+          </div>
         </div>
       </div>
-    </main>
+    </AppShell>
   );
 }
 
 export default function TeamPage() {
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
-      <Navbar />
-      <Suspense fallback={<div className="flex-1 p-10 text-center text-slate-500">Loading workspaces...</div>}>
-        <TeamPageContent />
-      </Suspense>
-      <Footer />
-    </div>
+    <Suspense fallback={
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+        <RefreshCw className="h-7 w-7 text-primary animate-spin" />
+      </div>
+    }>
+      <TeamPageContent />
+    </Suspense>
   );
 }

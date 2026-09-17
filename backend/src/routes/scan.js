@@ -841,7 +841,13 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
     }
 
     // Run new audits (performance, accessibility, SEO, AI search)
-    let performanceResult = { opportunities: [], diagnostics: [], performanceScore: 100 };
+    let performanceResult = {
+      measured: false,
+      unavailableReason: 'Performance analysis did not run.',
+      opportunities: [],
+      diagnostics: [],
+      performanceScore: null
+    };
     let accessibilityResult = { findings: [], accessibilityScore: 100 };
     let seoResult = { findings: [], seoScore: 100, details: {} };
     let aiSearchResult = { findings: [], aiSearchScore: 100, details: {} };
@@ -851,6 +857,7 @@ router.post('/', optionalAuth, checkScanQuota, async (req, res) => {
       performanceResult = await performanceAnalyzer.analyzePerformance(normalizedUrl, authOptions);
     } catch (err) {
       console.error('Performance analysis failed:', err);
+      performanceResult.unavailableReason = err.message;
     }
 
     try {

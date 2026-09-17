@@ -41,7 +41,7 @@ async function analyzePerformance(url, authOptions = {}) {
     // Measure request duration to estimate TTFB
     const requestStart = Date.now();
     const response = await page.goto(url, {
-      waitUntil: 'domcontentloaded',
+      waitUntil: 'load',
       timeout: 15000
     });
     const requestEnd = Date.now();
@@ -62,9 +62,11 @@ async function analyzePerformance(url, authOptions = {}) {
       };
     });
 
-    fcp = pageTimings.fcp || (requestEnd - requestStart) * 1.2; // fallback estimate
-    ttfb = pageTimings.ttfb || (requestEnd - requestStart) * 0.4;
-    loadTime = pageTimings.loadTime || (requestEnd - requestStart) * 1.5;
+    // Do not invent Core Web Vitals when the browser cannot provide them.
+    // A missing metric must remain unavailable rather than looking measured.
+    fcp = pageTimings.fcp;
+    ttfb = pageTimings.ttfb;
+    loadTime = pageTimings.loadTime;
 
     resources.scripts = pageTimings.scriptsCount;
     resources.styles = pageTimings.stylesCount;
@@ -82,17 +84,46 @@ async function analyzePerformance(url, authOptions = {}) {
       }
     }
   } catch (err) {
-    console.warn(`[performanceAnalyzer] Puppeteer paint timings failed, using fallback metrics: ${err.message}`);
-    // Heuristic fallbacks for local/restricted test environments
-    ttfb = 300;
-    fcp = 800;
-    loadTime = 1200;
+    console.warn(`[performanceAnalyzer] Performance measurement unavailable: ${err.message}`);
+    return {
+      measured: false,
+      unavailableReason: err.message,
+      performanceScore: null,
+      fcp: null,
+      ttfb: null,
+      loadTime: null,
+      opportunities: [],
+      diagnostics: [{
+        name: 'Performance measurement',
+        value: 'Not measured',
+        info: `Browser-based measurement could not run: ${err.message}`
+      }],
+      scanDuration: Date.now() - startTime
+    };
   } finally {
     if (browser) {
       try {
         await browser.close();
       } catch (_) {}
     }
+  }
+
+  if (![fcp, ttfb, loadTime].every(Number.isFinite)) {
+    return {
+      measured: false,
+      unavailableReason: 'The browser did not expose all required page timing metrics.',
+      performanceScore: null,
+      fcp: null,
+      ttfb: null,
+      loadTime: null,
+      opportunities: [],
+      diagnostics: [{
+        name: 'Performance measurement',
+        value: 'Not measured',
+        info: 'The browser did not expose all required page timing metrics.'
+      }],
+      scanDuration: Date.now() - startTime
+    };
   }
 
   // Calculate deterministic score (starting at 100)
@@ -182,6 +213,8 @@ async function analyzePerformance(url, authOptions = {}) {
   });
 
   return {
+    measured: true,
+    unavailableReason: null,
     performanceScore: Math.max(0, score),
     fcp,
     ttfb,

@@ -84,7 +84,7 @@ async function saveReport(scanId, report, userId = null, teamId = null) {
         report,
         expiresAt
       },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
     console.log(`[reportStore] Report ${scanId} successfully saved to MongoDB (User: ${userId || 'Guest'}).`);
   } catch (error) {

@@ -5,16 +5,21 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../lib/AuthContext';
 import { useWorkspace } from '../../lib/WorkspaceContext';
-import Navbar from '../../components/Navbar';
-import Footer from '../../components/Footer';
+import AppShell from '../../components/AppShell';
+import PageHeader from '../../components/ui/PageHeader';
 import { Button } from '../../components/ui/Button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card';
+import Badge from '../../components/ui/Badge';
+import StatusBadge from '../../components/ui/StatusBadge';
+import SeverityBadge from '../../components/ui/SeverityBadge';
+import EmptyState from '../../components/ui/EmptyState';
 import { 
   Shield, Eye, Calendar, ExternalLink, RefreshCw, AlertCircle, Search, 
   Globe, ChevronDown, ChevronUp, ArrowUpRight, CheckCircle2, TrendingUp, 
-  TrendingDown, Minus, History, ShieldAlert, Award, FolderOutput, Check
+  TrendingDown, Minus, History, ShieldAlert, Award, FolderOutput, Check, Plus
 } from 'lucide-react';
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from 'recharts';
 
 export default function HistoryPage() {
@@ -110,12 +115,10 @@ export default function HistoryPage() {
   });
 
   const projects = Object.entries(projectsMap).map(([url, urlScans]) => {
-    // Sort URL scans chronologically (newest first)
     const sortedScans = [...urlScans].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     const latestScan = sortedScans[0];
     const previousScan = sortedScans[1] || null;
 
-    // Vulnerability metrics from latest scan report
     const findings = latestScan.report?.findings || latestScan.report?.vulnerabilities || [];
     const critical = findings.filter(f => f.severity === 'critical').length;
     const high = findings.filter(f => f.severity === 'high').length;
@@ -140,48 +143,27 @@ export default function HistoryPage() {
 
   const getGradeBadgeColor = (grade) => {
     const g = String(grade).toUpperCase();
-    if (g.startsWith('A')) return 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400';
-    if (g.startsWith('B')) return 'bg-teal-500/10 border-teal-500/30 text-teal-400';
-    if (g.startsWith('C')) return 'bg-amber-500/10 border-amber-500/30 text-amber-400';
-    if (g.startsWith('D')) return 'bg-orange-500/10 border-orange-500/30 text-orange-400';
-    return 'bg-rose-500/10 border-rose-500/30 text-rose-400';
+    if (g.startsWith('A')) return 'bg-ok/10 border-ok/30 text-ok';
+    if (g.startsWith('B')) return 'bg-primary/10 border-primary/30 text-primary';
+    if (g.startsWith('C')) return 'bg-caution/10 border-caution/30 text-caution';
+    if (g.startsWith('D')) return 'bg-caution/10 border-caution/30 text-caution';
+    return 'bg-critical/10 border-critical/30 text-critical';
   };
 
   const getScoreColorClass = (score) => {
-    if (score >= 90) return 'text-emerald-400';
-    if (score >= 70) return 'text-lime-400';
-    if (score >= 50) return 'text-amber-400';
-    if (score >= 30) return 'text-orange-400';
-    return 'text-rose-400';
+    if (score >= 90) return 'text-ok';
+    if (score >= 70) return 'text-emerald-500';
+    if (score >= 50) return 'text-caution';
+    return 'text-critical';
   };
 
-  if (authLoading || (loading && scans.length === 0)) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background text-foreground transition-colors duration-300">
-        <Navbar />
-        <main className="flex-1 flex items-center justify-center p-8">
-          <div className="flex items-center gap-3 text-indigo-500 dark:text-indigo-400 font-semibold animate-pulse">
-            <RefreshCw className="h-5 w-5 animate-spin" />
-            Loading scan history & projects...
-          </div>
-        </main>
-        <Footer />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null; // Redirecting
-  }
-
-  // ── Score Trend Data (Item 10) ────────────────────────────────────────────
-  const TREND_COLORS = ['#6366f1','#10b981','#f59e0b','#a855f7','#ec4899','#06b6d4','#f43f5e'];
+  // Score Trend Data
+  const TREND_COLORS = ['#2E5FE8', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#EF4444'];
   const allDomains = Array.from(new Set(scans.map(s => {
     try { return new URL(s.url).hostname; } catch { return s.url; }
   })));
   const domainColor = new Map(allDomains.map((d, i) => [d, TREND_COLORS[i % TREND_COLORS.length]]));
 
-  // Build chronological data points (one per scan, sorted oldest first)
   const trendData = [...scans]
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
     .map(s => {
@@ -193,181 +175,196 @@ export default function HistoryPage() {
         score: s.score ?? 0,
         grade: s.grade || '—',
         scanMode: s.scanMode || 'quick',
-        color: domainColor.get(hostname) || '#6366f1'
+        color: domainColor.get(hostname) || '#2E5FE8'
       };
     })
     .filter(p => trendDomain === 'all' || p.domain === trendDomain);
-  // ─────────────────────────────────────────────────────────────────────────
+
+  if (authLoading || (loading && scans.length === 0)) {
+    return (
+      <AppShell activePath="/history">
+        <div className="flex-1 flex items-center justify-center p-16">
+          <div className="flex items-center gap-3 text-primary font-medium">
+            <RefreshCw className="h-5 w-5 animate-spin" />
+            Loading scan history & projects...
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground font-sans transition-colors duration-300">
-      <Navbar />
-      
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <AppShell activePath="/history">
+      <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
-              <Award className="h-8 w-8 text-indigo-550 dark:text-indigo-500" /> Project Security Status
-            </h1>
-            <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">
-              Analyze project vulnerabilities, track scan comparison trends, and manage security posture.
-            </p>
-          </div>
-          <Link
-            href="/"
-            className="inline-flex items-center justify-center gap-2 rounded-xl font-bold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white py-2.5 px-5 shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/45 hover:-translate-y-0.5 transition-all text-sm"
-          >
-            Start New Scan
-          </Link>
-        </div>
+        <PageHeader
+          title="Project Security Status & History"
+          description="Analyze project vulnerabilities, track scan comparison trends, and manage security posture over time."
+          breadcrumbs={[
+            { label: 'Console', href: '/dashboard' },
+            { label: 'Audit History' }
+          ]}
+          actions={
+            <Button
+              asChild
+              className="gap-2"
+            >
+              <Link href="/">
+                <Plus className="h-4 w-4" /> Start New Scan
+              </Link>
+            </Button>
+          }
+        />
 
         {error && (
-          <div className="flex items-center gap-3 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-sm mb-6">
+          <div className="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
             <AlertCircle className="h-5 w-5 flex-shrink-0" />
             <p>{error}</p>
           </div>
         )}
 
-        {/* ── Score Trend Chart (Item 10) ─────────────────────────────────── */}
+        {/* Score Trend Chart */}
         {scans.length > 0 && (
-          <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-xl dark:shadow-2xl mb-8 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                  Score Trend Over Time
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  {trendDomain === 'all' ? `All ${scans.length} scans across ${allDomains.length} domain(s)` : `Score history for ${trendDomain}`}
-                </p>
-              </div>
-              {/* Domain filter pills */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={() => setTrendDomain('all')}
-                  className={`text-[11px] font-bold px-2.5 py-1 rounded-full border transition-all ${
-                    trendDomain === 'all'
-                      ? 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/40'
-                      : 'bg-slate-100 dark:bg-slate-950 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-indigo-500/30'
-                  }`}
-                >
-                  All Domains
-                </button>
-                {allDomains.map(d => (
+          <Card>
+            <CardHeader className="pb-4 border-b border-border">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    Score Trend Over Time
+                  </CardTitle>
+                  <CardDescription className="text-xs mt-0.5">
+                    {trendDomain === 'all' ? `All ${scans.length} scans across ${allDomains.length} domain(s)` : `Score history for ${trendDomain}`}
+                  </CardDescription>
+                </div>
+                {/* Domain filter pills */}
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <button
-                    key={d}
-                    onClick={() => setTrendDomain(d)}
-                    className={`text-[11px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 transition-all ${
-                      trendDomain === d
-                        ? 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/40'
-                        : 'bg-slate-100 dark:bg-slate-950 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-indigo-500/30'
+                    type="button"
+                    onClick={() => setTrendDomain('all')}
+                    className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                      trendDomain === 'all'
+                        ? 'bg-primary/10 text-primary border-primary/40 font-semibold'
+                        : 'bg-muted text-muted-foreground border-border hover:border-primary/40'
                     }`}
                   >
-                    <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: domainColor.get(d) }} />
-                    {d}
+                    All Domains
                   </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="h-56 w-full">
-              {trendData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={trendData} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="date" stroke="#64748b" fontSize={10} tickLine={false} />
-                    <YAxis domain={[0, 100]} stroke="#64748b" fontSize={11} tickLine={false} />
-                    <Tooltip
-                      content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                          const d = payload[0].payload;
-                          const delta = trendData.indexOf(d) > 0
-                            ? d.score - trendData[trendData.indexOf(d) - 1]?.score
-                            : null;
-                          return (
-                            <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl shadow-2xl text-xs space-y-1 min-w-[160px]">
-                              <div className="font-bold text-white flex items-center gap-1.5">
-                                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }} />
-                                {d.domain}
-                              </div>
-                              <div className="text-slate-400 font-mono">{d.date}</div>
-                              <div className="text-indigo-400 font-bold font-mono">Score: {d.score}/100</div>
-                              <div className="text-slate-400">Grade: <span className="text-white font-bold">{d.grade}</span></div>
-                              <div className="text-slate-400 uppercase text-[10px]">Mode: {d.scanMode}</div>
-                              {delta !== null && (
-                                <div className={`flex items-center gap-1 font-bold ${
-                                  delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-rose-400' : 'text-slate-400'
-                                }`}>
-                                  {delta > 0 ? <TrendingUp className="h-3 w-3" /> : delta < 0 ? <TrendingDown className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
-                                  {delta > 0 ? '+' : ''}{delta} vs prev
-                                </div>
-                              )}
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="score"
-                      stroke="#6366f1"
-                      strokeWidth={3}
-                      dot={({ cx, cy, payload }) => (
-                        <circle
-                          key={`dot-${payload.date}-${payload.domain}`}
-                          cx={cx} cy={cy} r={5}
-                          fill={payload.color}
-                          stroke="#ffffff" strokeWidth={2}
-                        />
-                      )}
-                      activeDot={{ r: 8, fill: '#6366f1', stroke: '#ffffff', strokeWidth: 2 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-xs text-slate-400">
-                  No scans for selected domain yet.
+                  {allDomains.map(d => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setTrendDomain(d)}
+                      className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border flex items-center gap-1.5 transition-all cursor-pointer ${
+                        trendDomain === d
+                          ? 'bg-primary/10 text-primary border-primary/40 font-semibold'
+                          : 'bg-muted text-muted-foreground border-border hover:border-primary/40'
+                      }`}
+                    >
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: domainColor.get(d) }} />
+                      {d}
+                    </button>
+                  ))}
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-        {/* ─────────────────────────────────────────────────────────────────── */}
+              </div>
+            </CardHeader>
 
-        <div className="bg-white dark:bg-slate-900/40 border border-slate-205 dark:border-slate-800/80 rounded-2xl p-4 mb-8 flex items-center relative shadow-sm">
-          <Search className="absolute left-7 h-5 w-5 text-slate-400" />
+            <CardContent className="pt-6">
+              <div className="h-56 w-full">
+                {trendData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={trendData} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis dataKey="date" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} />
+                      <YAxis domain={[0, 100]} stroke="var(--muted-foreground)" fontSize={11} tickLine={false} />
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const d = payload[0].payload;
+                            const delta = trendData.indexOf(d) > 0
+                              ? d.score - trendData[trendData.indexOf(d) - 1]?.score
+                              : null;
+                            return (
+                              <div className="bg-card border border-border p-3 rounded-lg shadow-lg text-xs space-y-1 min-w-[160px]">
+                                <div className="font-semibold text-foreground flex items-center gap-1.5">
+                                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }} />
+                                  {d.domain}
+                                </div>
+                                <div className="text-muted-foreground font-mono text-[11px]">{d.date}</div>
+                                <div className="text-primary font-bold font-mono">Score: {d.score}/100</div>
+                                <div className="text-muted-foreground">Grade: <span className="text-foreground font-bold">{d.grade}</span></div>
+                                <div className="text-muted-foreground uppercase text-[10px]">Mode: {d.scanMode}</div>
+                                {delta !== null && (
+                                  <div className={`flex items-center gap-1 font-bold ${
+                                    delta > 0 ? 'text-ok' : delta < 0 ? 'text-critical' : 'text-muted-foreground'
+                                  }`}>
+                                    {delta > 0 ? <TrendingUp className="h-3 w-3" /> : delta < 0 ? <TrendingDown className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
+                                    {delta > 0 ? '+' : ''}{delta} vs prev
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="score"
+                        stroke="#2E5FE8"
+                        strokeWidth={3}
+                        dot={({ cx, cy, payload }) => (
+                          <circle
+                            key={`dot-${payload.date}-${payload.domain}`}
+                            cx={cx} cy={cy} r={4}
+                            fill={payload.color}
+                            stroke="var(--card)" strokeWidth={2}
+                          />
+                        )}
+                        activeDot={{ r: 6, fill: '#2E5FE8', stroke: 'var(--card)', strokeWidth: 2 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
+                    No scans for selected domain yet.
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
             placeholder="Search projects by target URL..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-12 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-955/60 border border-slate-205 dark:border-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all text-sm"
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-card border border-border text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-sm font-mono"
           />
         </div>
 
         {/* Project List */}
         {filteredProjects.length === 0 ? (
-          <div className="bg-white dark:bg-slate-900/30 border border-slate-205 dark:border-slate-800 rounded-3xl p-16 text-center shadow-sm relative overflow-hidden">
-            <div className="absolute -inset-px bg-gradient-to-br from-indigo-500/5 to-purple-500/0 rounded-3xl -z-10" />
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 mb-6">
-              <Globe className="h-7 w-7 text-slate-400" />
-            </div>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">No projects audited</h3>
-            <p className="text-slate-655 dark:text-slate-400 text-sm max-w-sm mx-auto mb-6">
-              {search ? "No scanned projects match your search terms." : "You haven't added any websites to your security posture board yet. Perform a scan to create your first project!"}
-            </p>
-            {!search && (
-              <Link
-                href="/"
-                className="inline-flex items-center justify-center gap-2 rounded-xl font-bold bg-indigo-650 hover:bg-indigo-600 text-white py-2.5 px-6 shadow-lg shadow-indigo-500/20 text-sm"
-              >
-                Perform First Audit
-              </Link>
+          <EmptyState
+            icon={Globe}
+            title={search ? "No Scanned Projects Found" : "No Projects Audited Yet"}
+            description={search ? "No scanned projects match your search query." : "You haven't run any website security audits yet. Perform your first scan to populate this posture dashboard."}
+            action={!search && (
+              <Button asChild>
+                <Link href="/">Perform First Audit</Link>
+              </Button>
             )}
-          </div>
+          />
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {filteredProjects.map((project) => {
               const { url, latestScan, previousScan, scans: urlScans, vulnerabilityBreakdown: vb, fixedCount } = project;
               const domain = (() => {
@@ -382,131 +379,131 @@ export default function HistoryPage() {
               const hasUnresolved = vb.critical > 0 || vb.high > 0 || vb.medium > 0;
 
               return (
-                <div 
-                  key={url} 
-                  className="border border-slate-205 dark:border-slate-800 rounded-3xl bg-white dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-800 transition-all duration-300 shadow-sm relative overflow-hidden"
-                >
-                  <div className="absolute -inset-px bg-gradient-to-r from-indigo-500/5 to-transparent rounded-3xl -z-10" />
-                  
+                <Card key={url} className="overflow-hidden">
                   {/* Card Header Section */}
-                  <div className="p-6 border-b border-slate-205 dark:border-slate-800/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-start gap-4">
-                      <div className="p-3 bg-slate-50 dark:bg-slate-950/80 border border-slate-205 dark:border-slate-800 rounded-2xl shrink-0 flex items-center justify-center text-indigo-550 dark:text-indigo-400">
-                        <Globe className="h-6 w-6" />
+                  <div className="p-5 border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3.5">
+                      <div className="p-2.5 bg-muted rounded-lg shrink-0 flex items-center justify-center text-primary border border-border">
+                        <Globe className="h-5 w-5" />
                       </div>
                       <div className="min-w-0">
-                        <h2 className="text-xl font-bold text-slate-900 dark:text-white truncate max-w-sm sm:max-w-md md:max-w-lg" title={url}>
+                        <h2 className="text-lg font-bold text-foreground truncate max-w-sm sm:max-w-md md:max-w-lg" title={url}>
                           {domain}
                         </h2>
                         <a 
                           href={url} 
                           target="_blank" 
                           rel="noopener noreferrer" 
-                          className="text-xs text-slate-500 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-405 inline-flex items-center gap-1 mt-0.5 truncate max-w-[280px] sm:max-w-xs font-mono"
+                          className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1 mt-0.5 truncate max-w-[280px] sm:max-w-xs font-mono"
                         >
-                          {url} <ExternalLink className="h-2.5 w-2.5" />
+                          {url} <ExternalLink className="h-3 w-3" />
                         </a>
                       </div>
                     </div>
                     
-                    <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Button
                         onClick={() => handleRescan(url)}
                         variant="outline"
-                        className="bg-white hover:bg-slate-50 dark:bg-slate-950/80 dark:hover:bg-slate-900 text-xs font-bold border-slate-205 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 px-3.5 py-1.5 h-8.5 rounded-xl flex items-center gap-1.5"
+                        size="sm"
+                        className="gap-1.5"
                       >
                         <RefreshCw className="h-3.5 w-3.5" /> Rescan
                       </Button>
-                      <Link
-                        href={`/results?scanId=${latestScan.scanId}`}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3.5 py-2 h-8.5 rounded-xl inline-flex items-center gap-1.5 shadow-lg shadow-indigo-500/10 transition-colors"
+                      <Button
+                        asChild
+                        size="sm"
+                        className="gap-1.5"
                       >
-                        View Latest Report <ArrowUpRight className="h-3.5 w-3.5" />
-                      </Link>
+                        <Link href={`/results?scanId=${latestScan.scanId}`}>
+                          View Latest Report <ArrowUpRight className="h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
                     </div>
                   </div>
 
                   {/* Security Posture Details Grid */}
-                  <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-muted/20">
                     {/* Score / Grade */}
-                    <div className="bg-slate-50 dark:bg-slate-950/30 p-4 border border-slate-205 dark:border-slate-800/60 rounded-2xl flex items-center gap-4">
-                      <div className={`h-12 w-12 rounded-full border flex items-center justify-center text-sm font-extrabold ${getGradeBadgeColor(latestScan.grade)}`}>
+                    <div className="bg-card p-3.5 border border-border rounded-lg flex items-center gap-3.5">
+                      <div className={`h-11 w-11 rounded-lg border flex items-center justify-center text-base font-bold font-mono ${getGradeBadgeColor(latestScan.grade)}`}>
                         {latestScan.grade}
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider block">Security Score</span>
-                        <span className={`text-2xl font-extrabold ${getScoreColorClass(latestScan.score)}`}>{latestScan.score}/100</span>
+                        <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Security Score</span>
+                        <span className={`text-xl font-bold font-mono ${getScoreColorClass(latestScan.score)}`}>{latestScan.score}/100</span>
                       </div>
                     </div>
 
                     {/* Score Trend Comparison */}
-                    <div className="bg-slate-50 dark:bg-slate-955/30 p-4 border border-slate-205 dark:border-slate-800/60 rounded-2xl flex flex-col justify-center">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider block mb-1">Audit Trend</span>
+                    <div className="bg-card p-3.5 border border-border rounded-lg flex flex-col justify-center">
+                      <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block mb-1">Audit Trend</span>
                       {previousScan ? (
                         <div className="flex flex-col gap-0.5">
                           <div className="flex items-center gap-1.5">
                             {scoreDiff > 0 ? (
-                              <span className="text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1 text-sm font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-lg">
+                              <span className="text-ok inline-flex items-center gap-1 text-xs font-bold font-mono bg-ok/10 border border-ok/20 px-2 py-0.5 rounded">
                                 <TrendingUp className="h-3.5 w-3.5" /> +{scoreDiff} Score
                               </span>
                             ) : scoreDiff < 0 ? (
-                              <span className="text-rose-600 dark:text-rose-400 inline-flex items-center gap-1 text-sm font-bold bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-lg">
+                              <span className="text-critical inline-flex items-center gap-1 text-xs font-bold font-mono bg-critical/10 border border-critical/20 px-2 py-0.5 rounded">
                                 <TrendingDown className="h-3.5 w-3.5" /> {scoreDiff} Score
                               </span>
                             ) : (
-                              <span className="text-slate-600 dark:text-slate-400 text-sm font-semibold">Score Stable</span>
+                              <span className="text-muted-foreground text-xs font-medium">Score Stable</span>
                             )}
                           </div>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-500 font-medium mt-1">
-                            Compared to previous run ({new Date(previousScan.createdAt).toLocaleDateString()})
+                          <span className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                            vs {new Date(previousScan.createdAt).toLocaleDateString()}
                           </span>
                         </div>
                       ) : (
-                        <span className="text-slate-500 dark:text-slate-450 text-xs font-semibold italic">Baseline (First Scan)</span>
+                        <span className="text-muted-foreground text-xs font-medium italic">Baseline (First Scan)</span>
                       )}
                     </div>
 
                     {/* Active Vulnerability Breakdown */}
-                    <div className="bg-slate-50 dark:bg-slate-955/30 p-4 border border-slate-205 dark:border-slate-800/60 rounded-2xl flex flex-col justify-center">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider block mb-2">Active Findings</span>
+                    <div className="bg-card p-3.5 border border-border rounded-lg flex flex-col justify-center">
+                      <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block mb-1.5">Active Findings</span>
                       {latestScan.report?.findings?.length > 0 ? (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {vb.critical > 0 && <span className="bg-red-500/10 text-red-650 dark:text-red-400 border border-red-500/20 text-[10px] font-bold px-1.5 py-0.5 rounded" title="Critical">{vb.critical} C</span>}
-                          {vb.high > 0 && <span className="bg-orange-500/10 text-orange-655 dark:text-orange-400 border border-orange-500/20 text-[10px] font-bold px-1.5 py-0.5 rounded" title="High">{vb.high} H</span>}
-                          {vb.medium > 0 && <span className="bg-yellow-500/10 text-yellow-655 dark:text-yellow-405 border border-yellow-500/20 text-[10px] font-bold px-1.5 py-0.5 rounded" title="Medium">{vb.medium} M</span>}
-                          {vb.low > 0 && <span className="bg-blue-500/10 text-blue-650 dark:text-blue-400 border border-blue-500/20 text-[10px] font-bold px-1.5 py-0.5 rounded" title="Low">{vb.low} L</span>}
+                        <div className="flex items-center gap-1.5 flex-wrap font-mono text-xs">
+                          {vb.critical > 0 && <span className="bg-critical/10 text-critical border border-critical/20 text-[10px] font-bold px-1.5 py-0.5 rounded" title="Critical">{vb.critical} Critical</span>}
+                          {vb.high > 0 && <span className="bg-orange-500/10 text-orange-500 border border-orange-500/20 text-[10px] font-bold px-1.5 py-0.5 rounded" title="High">{vb.high} High</span>}
+                          {vb.medium > 0 && <span className="bg-caution/10 text-caution border border-caution/20 text-[10px] font-bold px-1.5 py-0.5 rounded" title="Medium">{vb.medium} Medium</span>}
+                          {vb.low > 0 && <span className="bg-blue-500/10 text-blue-500 border border-blue-500/20 text-[10px] font-bold px-1.5 py-0.5 rounded" title="Low">{vb.low} Low</span>}
                         </div>
                       ) : (
-                        <span className="text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Secure / Clean</span>
+                        <span className="text-ok text-xs font-medium flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Secure / Clean</span>
                       )}
                     </div>
 
                     {/* Resolved Fixes */}
-                    <div className="bg-slate-50 dark:bg-slate-955/30 p-4 border border-slate-205 dark:border-slate-800/60 rounded-2xl flex flex-col justify-center">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-500 font-bold uppercase tracking-wider block mb-1">Fixed Vulnerabilities</span>
+                    <div className="bg-card p-3.5 border border-border rounded-lg flex flex-col justify-center">
+                      <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block mb-1">Fixed Findings</span>
                       {fixedCount > 0 ? (
                         <div>
-                          <span className="inline-flex items-center gap-1 bg-emerald-500/15 text-emerald-650 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold px-2.5 py-1 rounded-xl shadow-lg shadow-emerald-500/5">
-                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                            {fixedCount} Resolves Verified!
+                          <span className="inline-flex items-center gap-1 bg-ok/10 text-ok border border-ok/20 text-xs font-semibold px-2 py-0.5 rounded">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-ok shrink-0" />
+                            {fixedCount} Resolved
                           </span>
                         </div>
                       ) : previousScan && !hasUnresolved ? (
-                        <span className="text-emerald-600 dark:text-emerald-400 text-xs font-semibold">Fully clean website</span>
+                        <span className="text-ok text-xs font-medium">Fully clean website</span>
                       ) : (
-                        <span className="text-slate-500 dark:text-slate-500 text-xs italic">No new fixes detected</span>
+                        <span className="text-muted-foreground text-xs italic">No new fixes detected</span>
                       )}
                     </div>
                   </div>
 
                   {/* History Timeline Toggle */}
-                  <div className="px-6 pb-6 pt-2">
+                  <div className="px-5 py-3 border-t border-border">
                     <button
+                      type="button"
                       onClick={() => toggleProjectExpand(url)}
-                      className="w-full flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border-t border-slate-205 dark:border-slate-800/50 pt-4 transition-colors font-sans"
+                      className="w-full flex items-center justify-between text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                     >
                       <span className="flex items-center gap-1.5">
-                        <History className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                        <History className="h-4 w-4 text-primary" />
                         Audit History Logs ({urlScans.length} runs)
                       </span>
                       {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -514,79 +511,81 @@ export default function HistoryPage() {
 
                     {/* Expandable run history */}
                     {isExpanded && (
-                      <div className="mt-4 bg-slate-50 dark:bg-slate-950/40 border border-slate-205 dark:border-slate-800/60 rounded-2xl p-4 space-y-4">
-                        <div className="relative border-l border-slate-200 dark:border-slate-800 ml-3.5 pl-6 space-y-5">
+                      <div className="mt-4 pt-3 border-t border-border space-y-3">
+                        <div className="relative border-l border-border ml-3 pl-5 space-y-4">
                           {urlScans.map((scan, idx) => {
                              const scanDateStr = new Date(scan.createdAt).toLocaleString();
                              const findingsCount = scan.report?.findings?.length || 0;
                              return (
                                <div key={scan.scanId} className="relative group">
                                  {/* Bullet indicator */}
-                                 <span className={`absolute -left-[31px] top-1 h-3.5 w-3.5 rounded-full border-2 bg-white dark:bg-slate-950 group-hover:scale-110 transition-transform ${
+                                 <span className={`absolute -left-[27px] top-1.5 h-3 w-3 rounded-full border-2 bg-card ${
                                    idx === 0 
-                                     ? 'border-indigo-650 dark:border-indigo-500 ring-2 ring-indigo-500/20' 
-                                     : 'border-slate-300 dark:border-slate-700'
+                                     ? 'border-primary ring-2 ring-primary/20' 
+                                     : 'border-muted-foreground/50'
                                  }`} />
                                  
-                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white dark:bg-slate-900/30 hover:bg-slate-50 dark:hover:bg-slate-900/60 border border-slate-105 dark:border-transparent hover:border-slate-205 dark:hover:border-slate-850 p-3 rounded-xl transition-all shadow-sm">
+                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-muted/30 hover:bg-muted/60 border border-border p-3 rounded-lg transition-all">
                                    <div className="flex items-center gap-3">
-                                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">{scanDateStr}</span>
-                                     <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                       scan.scanMode === 'full' 
-                                         ? 'bg-purple-500/10 text-purple-650 dark:text-purple-400 border border-purple-500/20' 
-                                         : 'bg-blue-500/10 text-blue-650 dark:text-blue-400 border border-blue-500/20'
-                                     }`}>
+                                     <span className="text-xs font-medium text-foreground font-mono">{scanDateStr}</span>
+                                     <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-muted text-muted-foreground border border-border">
                                        {scan.scanMode}
                                      </span>
                                      {idx === 0 && (
-                                       <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-405 border border-indigo-500/20 text-[9px] uppercase tracking-wide font-bold">
-                                         Latest Run
+                                       <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[9px] uppercase tracking-wide font-bold">
+                                         Latest
                                        </span>
                                      )}
                                    </div>
 
-                                   <div className="flex items-center gap-4">
+                                   <div className="flex items-center gap-3 flex-wrap">
                                      <div className="flex items-center gap-2">
-                                       <span className="text-xs text-slate-500 dark:text-slate-500 font-medium">{findingsCount} issues</span>
-                                       <span className={`text-xs font-bold ${getScoreColorClass(scan.score)}`}>{scan.score}/100</span>
-                                       <span className={`inline-flex items-center justify-center font-extrabold h-5.5 w-5.5 rounded-full border text-[9px] ${getGradeBadgeColor(scan.grade)}`}>
+                                       <span className="text-xs text-muted-foreground font-mono">{findingsCount} issues</span>
+                                       <span className={`text-xs font-bold font-mono ${getScoreColorClass(scan.score)}`}>{scan.score}/100</span>
+                                       <span className={`inline-flex items-center justify-center font-bold font-mono h-5 w-5 rounded border text-[9px] ${getGradeBadgeColor(scan.grade)}`}>
                                          {scan.grade}
                                        </span>
                                      </div>
-                                     <Link
-                                       href={`/results?scanId=${scan.scanId}`}
-                                       className="text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1 border border-slate-205 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 px-2.5 py-1 rounded-lg transition-colors"
+
+                                     <Button
+                                       asChild
+                                       variant="outline"
+                                       size="sm"
+                                       className="h-7 text-xs px-2.5 gap-1"
                                      >
-                                       View <Eye className="h-3 w-3" />
-                                     </Link>
+                                       <Link href={`/results?scanId=${scan.scanId}`}>
+                                         View <Eye className="h-3 w-3" />
+                                       </Link>
+                                     </Button>
 
                                      {/* Move to Workspace Dropdown */}
                                      {workspaces.length > 0 && (
                                        <div className="relative">
-                                         <button
-                                           type="button"
+                                         <Button
+                                           variant="ghost"
+                                           size="sm"
                                            onClick={() => setOpenMoveMenuId(openMoveMenuId === scan.scanId ? null : scan.scanId)}
                                            disabled={movingScanId === scan.scanId}
-                                           className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 inline-flex items-center gap-1 border border-indigo-500/20 hover:bg-indigo-500/10 px-2.5 py-1 rounded-lg transition-colors"
+                                           className="h-7 text-xs text-primary hover:text-primary gap-1"
                                          >
                                            <FolderOutput className="h-3 w-3" />
-                                           {movingScanId === scan.scanId ? 'Moving...' : 'Move to Workspace'}
-                                         </button>
+                                           {movingScanId === scan.scanId ? 'Moving...' : 'Move'}
+                                         </Button>
 
                                          {openMoveMenuId === scan.scanId && (
                                            <>
                                              <div className="fixed inset-0 z-10" onClick={() => setOpenMoveMenuId(null)} />
-                                             <div className="absolute right-0 mt-1 w-52 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-1.5 z-20 space-y-1">
-                                               <div className="px-2.5 py-1 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                                             <div className="absolute right-0 mt-1 w-52 bg-card border border-border rounded-lg shadow-lg p-1 z-20 space-y-1">
+                                               <div className="px-2.5 py-1 text-[10px] uppercase font-bold text-muted-foreground border-b border-border">
                                                  Transfer to Workspace
                                                </div>
                                                {workspaces.map((w) => (
                                                  <button
                                                    key={w._id}
                                                    onClick={() => handleMoveScan(scan.scanId, w._id)}
-                                                   className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 truncate"
+                                                   className="w-full text-left px-2.5 py-1.5 rounded-md text-xs text-foreground hover:bg-muted flex items-center gap-2 truncate cursor-pointer"
                                                  >
-                                                   <Globe className="h-3 w-3 text-purple-500 shrink-0" />
+                                                   <Globe className="h-3 w-3 text-primary shrink-0" />
                                                    <span className="truncate">{w.name}</span>
                                                  </button>
                                                ))}
@@ -604,14 +603,12 @@ export default function HistoryPage() {
                       </div>
                     )}
                   </div>
-                </div>
+                </Card>
               );
             })}
           </div>
         )}
-      </main>
-
-      <Footer />
-    </div>
+      </div>
+    </AppShell>
   );
 }

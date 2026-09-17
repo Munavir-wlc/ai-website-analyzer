@@ -23,20 +23,22 @@ const redisPassword = process.env.REDIS_PASSWORD || null;
 
 let connection = null;
 try {
-  connection = new Redis({
-    host: redisHost,
-    port: redisPort,
-    password: redisPassword,
-    maxRetriesPerRequest: null,
-    enableOfflineQueue: false,
-    retryStrategy(times) {
-      if (times > 3) return null;
-      return Math.min(times * 100, 2000);
-    }
-  });
-  connection.on('error', () => {
-    // Silent error handler when Redis daemon is off
-  });
+  if (process.env.SCAN_QUEUE_DISABLED !== 'true') {
+    connection = new Redis({
+      host: redisHost,
+      port: redisPort,
+      password: redisPassword,
+      maxRetriesPerRequest: null,
+      enableOfflineQueue: false,
+      retryStrategy(times) {
+        if (times > 3) return null;
+        return Math.min(times * 100, 2000);
+      }
+    });
+    connection.on('error', () => {
+      // Silent error handler when Redis daemon is off
+    });
+  }
 } catch (e) {
   connection = null;
 }
@@ -251,7 +253,13 @@ async function processScanJob(data) {
     }
 
     // Run new audits (performance, accessibility, SEO, AI search)
-    let performanceResult = { opportunities: [], diagnostics: [], performanceScore: 100 };
+    let performanceResult = {
+      measured: false,
+      unavailableReason: 'Performance analysis did not run.',
+      opportunities: [],
+      diagnostics: [],
+      performanceScore: null
+    };
     let accessibilityResult = { findings: [], accessibilityScore: 100 };
     let seoResult = { findings: [], seoScore: 100, details: {} };
     let aiSearchResult = { findings: [], aiSearchScore: 100, details: {} };
@@ -261,6 +269,7 @@ async function processScanJob(data) {
       performanceResult = await performanceAnalyzer.analyzePerformance(normalizedUrl, authOptions);
     } catch (err) {
       console.error('Performance analysis failed:', err);
+      performanceResult.unavailableReason = err.message;
     }
 
     try {
@@ -473,8 +482,10 @@ async function processScanJob(data) {
 }
 
 let workerInstance = null;
+let workerClosed = false;
 
 function startWorkerInstance() {
+  if (workerClosed) return null;
   if (workerInstance) return workerInstance;
 
   console.log('[scanWorker] Initializing background BullMQ scan worker...');
@@ -494,6 +505,10 @@ function startWorkerInstance() {
 }
 
 function initScanWorker() {
+  if (process.env.SCAN_QUEUE_DISABLED === 'true') {
+    console.log('[scanWorker] Background worker disabled for this environment.');
+    return null;
+  }
   if (!connection) {
     console.log('[scanWorker] Redis connection failed to initialize. In-memory queue handler will process jobs.');
     return null;
@@ -513,4 +528,14 @@ function initScanWorker() {
   return null;
 }
 
-module.exports = { initScanWorker, processScanJob };
+async function closeScanWorker() {
+  workerClosed = true;
+  const closers = [];
+  if (workerInstance) closers.push(workerInstance.close());
+  if (connection) closers.push(connection.quit().catch(() => connection.disconnect()));
+  await Promise.all(closers);
+  workerInstance = null;
+  connection = null;
+}
+
+module.exports = { initScanWorker, processScanJob, closeScanWorker };

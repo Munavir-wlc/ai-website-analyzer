@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 const AuthContext = createContext(null);
@@ -14,18 +14,7 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState(null);
   const router = useRouter();
 
-  useEffect(() => {
-    // Check for stored token and fetch user
-    const storedToken = localStorage.getItem('vapt_auth_token');
-    if (storedToken) {
-      setToken(storedToken);
-      fetchUserProfile(storedToken);
-    } else {
-      setLoading(false);
-    }
-  }, []);
-
-  const fetchUserProfile = async (authToken) => {
+  const fetchUserProfile = useCallback(async (authToken) => {
     try {
       const res = await fetch(`${API_BASE}/api/auth/me`, {
         headers: {
@@ -45,7 +34,17 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem('vapt_auth_token');
+    if (storedToken) {
+      setToken(storedToken);
+      fetchUserProfile(storedToken);
+    } else {
+      setLoading(false);
+    }
+  }, [fetchUserProfile]);
 
   const login = async (email, password) => {
     setError(null);

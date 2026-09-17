@@ -3,123 +3,161 @@
 import Navbar from '../components/Navbar';
 import ScanForm from '../components/ScanForm';
 import Footer from '../components/Footer';
-import { Shield, Lock, Eye, AlertTriangle, FileCheck } from 'lucide-react';
+import Link from 'next/link';
+import { Shield, Lock, Eye, AlertTriangle, FileCheck, CheckCircle, ArrowRight, Zap, Terminal, Sparkles } from 'lucide-react';
+import { Button } from '../components/ui/Button';
 
 export default function HomePage() {
+  const scrollToScanner = () => {
+    const el = document.getElementById('security-scanner-console');
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground selection:bg-indigo-500 selection:text-white transition-colors duration-300">
+    <div className="min-h-screen flex flex-col bg-background text-foreground selection:bg-primary selection:text-white transition-colors duration-200">
       <Navbar />
       
       <main className="flex-1 flex flex-col">
-        {/* Hero & Scanner Section */}
-        <section className="relative overflow-hidden pt-20 pb-28 px-4 sm:px-6 lg:px-8 border-b border-slate-200 dark:border-slate-800">
-          {/* Subtle gradient highlights */}
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 -z-10" />
-          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-indigo-500/10 blur-3xl -z-10 pointer-events-none" />
-          <div className="absolute top-10 right-10 w-72 h-72 rounded-full bg-violet-600/5 blur-3xl -z-10 pointer-events-none" />
+        {/* Security Hero Section */}
+        <section className="relative overflow-hidden pt-16 pb-24 px-4 sm:px-6 lg:px-8 border-b border-border">
+          {/* Subtle technical background grid / glow */}
+          <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] dark:bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] opacity-40 pointer-events-none -z-10" />
+          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-3xl -z-10 pointer-events-none" />
 
-          <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-12">
+          <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-12 lg:gap-16">
+            
             {/* Value Proposition */}
             <div className="flex-1 text-center lg:text-left space-y-6">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-sm font-medium">
-                <Shield className="h-4 w-4" /> Next-Gen AI Security Scanner
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold uppercase tracking-wider font-mono">
+                <Shield className="h-3.5 w-3.5" /> AI-POWERED WEBSITE SECURITY
               </div>
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-none">
-                Deep VAPT Audits, <br />
-                <span className="bg-gradient-to-r from-indigo-550 via-purple-500 to-pink-500 dark:from-indigo-400 dark:via-purple-400 dark:to-pink-400 bg-clip-text text-transparent">
-                  Powered by AI.
-                </span>
+              
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-foreground leading-[1.1]">
+                Find vulnerabilities <br />
+                <span className="text-primary">before attackers do.</span>
               </h1>
-              <p className="max-w-xl mx-auto lg:mx-0 text-base sm:text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
-                Scan your web applications for vulnerabilities, misconfigured CORS, insecure cookies, mixed content, and SSL/DNS health risks in seconds.
+              
+              <p className="max-w-xl mx-auto lg:mx-0 text-base sm:text-lg text-muted-foreground leading-relaxed">
+                Continuously assess your websites for security vulnerabilities, configuration weaknesses, exposed assets, and compliance risks.
               </p>
               
-              {/* Core features indicators */}
-              <div className="grid grid-cols-2 gap-4 max-w-md mx-auto lg:mx-0 pt-4">
-                <div className="flex items-center gap-3 text-slate-800 dark:text-slate-300">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-105 border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
-                    <Lock className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  </div>
-                  <span className="text-sm font-semibold">SSL & DNS Health</span>
+              {/* CTAs */}
+              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 pt-2">
+                <Button onClick={scrollToScanner} size="lg" className="gap-2 shadow-sm">
+                  Start Security Scan <ArrowRight className="h-4 w-4" />
+                </Button>
+                <Link href="/pricing">
+                  <Button variant="outline" size="lg">
+                    View Pricing & Quotas
+                  </Button>
+                </Link>
+              </div>
+
+              {/* Security Trust Badges */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 border-t border-border/80">
+                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <span>OWASP Top 10</span>
                 </div>
-                <div className="flex items-center gap-3 text-slate-800 dark:text-slate-300">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-105 border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
-                    <Eye className="h-4 w-4 text-amber-600 dark:text-amber-405" />
-                  </div>
-                  <span className="text-sm font-semibold">Passive Recon</span>
+                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <span>SSL/TLS Audit</span>
                 </div>
-                <div className="flex items-center gap-3 text-slate-800 dark:text-slate-300">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-105 border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
-                    <AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
-                  </div>
-                  <span className="text-sm font-semibold">Vulnerability Scans</span>
+                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <span>Passive Recon</span>
                 </div>
-                <div className="flex items-center gap-3 text-slate-800 dark:text-slate-300">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-105 border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
-                    <FileCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                  </div>
-                  <span className="text-sm font-semibold">Compliance Flags</span>
+                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <span>AI Remediation</span>
                 </div>
               </div>
             </div>
 
-            {/* Live Scan Form Container */}
-            <div className="w-full max-w-lg bg-white/60 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md relative">
-              <div className="absolute -inset-px bg-gradient-to-br from-indigo-500/20 to-purple-500/0 rounded-3xl -z-10" />
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6 text-center">Configure & Start Scan</h2>
-              <ScanForm />
+            {/* Interactive Security Scanner Console */}
+            <div id="security-scanner-console" className="w-full max-w-xl shrink-0">
+              <div className="rounded-lg border border-border bg-card p-6 sm:p-8 shadow-lg transition-all">
+                <div className="flex items-center justify-between border-b border-border pb-4 mb-6">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Terminal className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-bold text-foreground">Security Audit Console</h2>
+                      <p className="text-[11px] text-muted-foreground">Deterministic & Dynamic Analysis</p>
+                    </div>
+                  </div>
+                  <span className="flex items-center gap-1.5 text-[11px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> Ready
+                  </span>
+                </div>
+
+                <ScanForm />
+              </div>
             </div>
+
           </div>
         </section>
 
-        {/* Workflow & Guide Section */}
-        <section className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-105 dark:bg-slate-950">
-          <div className="max-w-7xl mx-auto space-y-12">
-            <div className="text-center max-w-3xl mx-auto space-y-4">
-              <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white">How It Works</h2>
-              <p className="text-slate-600 dark:text-slate-400">
-                A simple three-step defensive audit to identify and remediate security risks on your domain.
+        {/* Technical Capability Grid */}
+        <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full space-y-12">
+          <div className="text-center space-y-2 max-w-2xl mx-auto">
+            <span className="text-xs font-bold uppercase tracking-wider text-primary font-mono">
+              Enterprise Defense Coverage
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+              Built for Modern Security Operations
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Comprehensive automated testing covering web security posture, passive attack surface, and configuration drift.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="rounded-lg border border-border bg-card p-6 shadow-sm space-y-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Lock className="h-5 w-5" />
+              </div>
+              <h3 className="text-base font-bold text-foreground">SSL/TLS & Cryptography</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Certificate validity, revocation status, cipher suites, protocol vulnerabilities, and strict transport security (HSTS) enforcement.
               </p>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {/* Step 1 */}
-              <div className="p-6 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl relative shadow-sm">
-                <div className="absolute -top-4 left-6 flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-extrabold text-sm border border-indigo-550 shadow-md">
-                  1
-                </div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mt-2 mb-3">Input Target</h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Enter the URL you wish to check. Choose between a quick header audit or a comprehensive full security scan.
-                </p>
-              </div>
 
-              {/* Step 2 */}
-              <div className="p-6 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl relative shadow-sm">
-                <div className="absolute -top-4 left-6 flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-extrabold text-sm border border-indigo-550 shadow-md">
-                  2
-                </div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mt-2 mb-3">Monitor Real-Time Scan</h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Observe crawling, SSL validation, DNS mapping, exposed file scanner, and AI assessment stream through WebSockets.
-                </p>
+            <div className="rounded-lg border border-border bg-card p-6 shadow-sm space-y-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <FileCheck className="h-5 w-5" />
               </div>
+              <h3 className="text-base font-bold text-foreground">Security Header Defense</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Verify CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy implementations.
+              </p>
+            </div>
 
-              {/* Step 3 */}
-              <div className="p-6 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl relative shadow-sm">
-                <div className="absolute -top-4 left-6 flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-extrabold text-sm border border-indigo-550 shadow-md">
-                  3
-                </div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white mt-2 mb-3">Actionable Remediation</h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Review the security grade, browse detailed findings categorized by severity, verify compliance status, and print the PDF report.
-                </p>
+            <div className="rounded-lg border border-border bg-card p-6 shadow-sm space-y-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                <Eye className="h-5 w-5" />
               </div>
+              <h3 className="text-base font-bold text-foreground">Passive Reconnaissance</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Subdomain discovery, DNS record misconfigurations, open port reconnaissance, and exposed administrative paths.
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-border bg-card p-6 shadow-sm space-y-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <h3 className="text-base font-bold text-foreground">AI Remediation Guidance</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Contextual code snippets for Nginx, Apache, Express, and Next.js to fix verified security findings in minutes.
+              </p>
             </div>
           </div>
         </section>
+
       </main>
-      
+
       <Footer />
     </div>
   );

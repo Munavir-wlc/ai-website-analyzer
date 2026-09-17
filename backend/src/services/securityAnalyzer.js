@@ -622,7 +622,11 @@ async function analyzeSecurity(crawlerResult, consent = false, onStep = null) {
       );
 
       if (!isDuplicate) {
-        findings.push(finding);
+        findings.push({
+          ...finding,
+          source: 'ai-analysis',
+          validationStatus: 'needs_verification'
+        });
       }
     }
 
