@@ -1,7 +1,7 @@
 module.exports = {
   testEnvironment: 'node',
   testTimeout: 60000,
-  openHandlesTimeout: 10000,
+  forceExit: true,
   transformIgnorePatterns: [],
   moduleNameMapper: {
     '^whoiser$': '<rootDir>/tests/mocks/whoiserMock.js'
